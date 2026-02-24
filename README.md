@@ -76,7 +76,7 @@ _If this software is useful and brings you value,
 consider supporting the project by buying me a coffee.
 Your support helps keep development going._
 
-[![Ko-fi](https://img.shields.io/badge/Support%20me%20on%20Ko--fi-72a5f2?style=for-the-badge&logo=ko-fi&logoColor=white)](https://ko-fi.com/afkarxyz)
+[![Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/afkarxyz)
 
 ## Disclaimer
 
@@ -94,8 +94,7 @@ The software is provided "as is", without warranty of any kind. The author assum
 
 ## API Credits
 
-- **Tidal**: [hifi-api](https://github.com/binimum/hifi-api)
-- **Qobuz**: [dabmusic.xyz](https://dabmusic.xyz), [squid.wtf](https://squid.wtf), [jumo-dl](https://jumo-dl.pages.dev/)
+[MusicBrainz](https://musicbrainz.org) · [Spotify Lyrics API](https://github.akashrchandran.in/spotify-lyrics-api) · [LRCLIB](https://lrclib.net) · [Song.link](https://song.link) · [hifi-api](https://github.com/binimum/hifi-api) · [dabmusic.xyz](https://dabmusic.xyz)
 
 > [!TIP]
 >

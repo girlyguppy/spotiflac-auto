@@ -1,7 +1,6 @@
 package backend
 
 import (
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -71,11 +70,9 @@ func (s *SongLinkClient) GetAllURLsFromSpotify(spotifyTrackID string, region str
 		}
 	}
 
-	spotifyBase, _ := base64.StdEncoding.DecodeString("aHR0cHM6Ly9vcGVuLnNwb3RpZnkuY29tL3RyYWNrLw==")
-	spotifyURL := fmt.Sprintf("%s%s", string(spotifyBase), spotifyTrackID)
+	spotifyURL := fmt.Sprintf("https://open.spotify.com/track/%s", spotifyTrackID)
 
-	apiBase, _ := base64.StdEncoding.DecodeString("aHR0cHM6Ly9hcGkuc29uZy5saW5rL3YxLWFscGhhLjEvbGlua3M/dXJsPQ==")
-	apiURL := fmt.Sprintf("%s%s", string(apiBase), url.QueryEscape(spotifyURL))
+	apiURL := fmt.Sprintf("https://api.song.link/v1-alpha.1/links?url=%s", url.QueryEscape(spotifyURL))
 
 	if region != "" {
 		apiURL += fmt.Sprintf("&userCountry=%s", region)
@@ -200,11 +197,9 @@ func (s *SongLinkClient) CheckTrackAvailability(spotifyTrackID string) (*TrackAv
 		}
 	}
 
-	spotifyBase, _ := base64.StdEncoding.DecodeString("aHR0cHM6Ly9vcGVuLnNwb3RpZnkuY29tL3RyYWNrLw==")
-	spotifyURL := fmt.Sprintf("%s%s", string(spotifyBase), spotifyTrackID)
+	spotifyURL := fmt.Sprintf("https://open.spotify.com/track/%s", spotifyTrackID)
 
-	apiBase, _ := base64.StdEncoding.DecodeString("aHR0cHM6Ly9hcGkuc29uZy5saW5rL3YxLWFscGhhLjEvbGlua3M/dXJsPQ==")
-	apiURL := fmt.Sprintf("%s%s", string(apiBase), url.QueryEscape(spotifyURL))
+	apiURL := fmt.Sprintf("https://api.song.link/v1-alpha.1/links?url=%s", url.QueryEscape(spotifyURL))
 
 	req, err := http.NewRequest("GET", apiURL, nil)
 	if err != nil {
@@ -299,8 +294,7 @@ func checkQobuzAvailability(isrc string) bool {
 	client := &http.Client{Timeout: 10 * time.Second}
 	appID := "798273057"
 
-	apiBase, _ := base64.StdEncoding.DecodeString("aHR0cHM6Ly93d3cucW9idXouY29tL2FwaS5qc29uLzAuMi90cmFjay9zZWFyY2g/cXVlcnk9")
-	searchURL := fmt.Sprintf("%s%s&limit=1&app_id=%s", string(apiBase), isrc, appID)
+	searchURL := fmt.Sprintf("https://www.qobuz.com/api.json/0.2/track/search?query=%s&limit=1&app_id=%s", isrc, appID)
 
 	resp, err := client.Get(searchURL)
 	if err != nil {
@@ -352,11 +346,9 @@ func (s *SongLinkClient) GetDeezerURLFromSpotify(spotifyTrackID string) (string,
 		}
 	}
 
-	spotifyBase, _ := base64.StdEncoding.DecodeString("aHR0cHM6Ly9vcGVuLnNwb3RpZnkuY29tL3RyYWNrLw==")
-	spotifyURL := fmt.Sprintf("%s%s", string(spotifyBase), spotifyTrackID)
+	spotifyURL := fmt.Sprintf("https://open.spotify.com/track/%s", spotifyTrackID)
 
-	apiBase, _ := base64.StdEncoding.DecodeString("aHR0cHM6Ly9hcGkuc29uZy5saW5rL3YxLWFscGhhLjEvbGlua3M/dXJsPQ==")
-	apiURL := fmt.Sprintf("%s%s", string(apiBase), url.QueryEscape(spotifyURL))
+	apiURL := fmt.Sprintf("https://api.song.link/v1-alpha.1/links?url=%s", url.QueryEscape(spotifyURL))
 
 	req, err := http.NewRequest("GET", apiURL, nil)
 	if err != nil {

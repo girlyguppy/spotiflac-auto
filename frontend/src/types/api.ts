@@ -138,6 +138,7 @@ export interface DownloadRequest {
     publisher?: string;
     spotify_url?: string;
     use_first_artist_only?: boolean;
+    use_single_genre?: boolean;
 }
 export interface DownloadResponse {
     success: boolean;

@@ -118,79 +118,6 @@ func (q *QobuzDownloader) searchByISRC(isrc string) (*QobuzTrack, error) {
 	return &searchResp.Tracks.Items[0], nil
 }
 
-func decodeXOR(data []byte) string {
-	text := string(data)
-	runes := []rune(text)
-	result := make([]rune, len(runes))
-	for i, char := range runes {
-		key := rune((i * 17) % 128)
-		result[i] = char ^ 253 ^ key
-	}
-	return string(result)
-}
-
-func (q *QobuzDownloader) mapJumoQuality(quality string) int {
-	switch quality {
-	case "6":
-		return 6
-	case "7":
-		return 7
-	case "27":
-		return 27
-	default:
-		return 6
-	}
-}
-
-func (q *QobuzDownloader) DownloadFromJumo(trackID int64, quality string) (string, error) {
-	formatID := q.mapJumoQuality(quality)
-	region := "US"
-	url := fmt.Sprintf("https://jumo-dl.pages.dev/get?track_id=%d&format_id=%d&region=%s", trackID, formatID, region)
-
-	client := &http.Client{Timeout: 30 * time.Second}
-
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return "", err
-	}
-
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36")
-	req.Header.Set("Referer", "https://jumo-dl.pages.dev/")
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != 200 {
-		return "", fmt.Errorf("HTTP %d", resp.StatusCode)
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", err
-	}
-
-	var result struct {
-		URL string `json:"url"`
-	}
-
-	if err := json.Unmarshal(body, &result); err != nil {
-
-		decoded := decodeXOR(body)
-		if err := json.Unmarshal([]byte(decoded), &result); err != nil {
-			return "", fmt.Errorf("failed to parse JSON (plain or XOR): %w", err)
-		}
-	}
-
-	if result.URL != "" {
-		return result.URL, nil
-	}
-
-	return "", fmt.Errorf("URL not found in Jumo response")
-}
-
 func (q *QobuzDownloader) DownloadFromStandard(apiBase string, trackID int64, quality string) (string, error) {
 	apiURL := fmt.Sprintf("%s%d&quality=%s", apiBase, trackID, quality)
 	resp, err := q.client.Get(apiURL)
@@ -260,13 +187,6 @@ func (q *QobuzDownloader) GetDownloadURL(trackID int64, quality string, allowFal
 				},
 			})
 		}
-
-		providers = append(providers, Provider{
-			Name: "Jumo-DL",
-			Func: func() (string, error) {
-				return q.DownloadFromJumo(trackID, qual)
-			},
-		})
 
 		rand.Seed(time.Now().UnixNano())
 		rand.Shuffle(len(providers), func(i, j int) { providers[i], providers[j] = providers[j], providers[i] })
@@ -433,7 +353,7 @@ func buildQobuzFilename(title, artist, album, albumArtist, releaseDate string, t
 	return filename + ".flac"
 }
 
-func (q *QobuzDownloader) DownloadTrack(spotifyID, outputDir, quality, filenameFormat string, includeTrackNumber bool, position int, spotifyTrackName, spotifyArtistName, spotifyAlbumName, spotifyAlbumArtist, spotifyReleaseDate string, useAlbumTrackNumber bool, spotifyCoverURL string, embedMaxQualityCover bool, spotifyTrackNumber, spotifyDiscNumber, spotifyTotalTracks int, spotifyTotalDiscs int, spotifyCopyright, spotifyPublisher, spotifyURL string, allowFallback bool, useFirstArtistOnly bool) (string, error) {
+func (q *QobuzDownloader) DownloadTrack(spotifyID, outputDir, quality, filenameFormat string, includeTrackNumber bool, position int, spotifyTrackName, spotifyArtistName, spotifyAlbumName, spotifyAlbumArtist, spotifyReleaseDate string, useAlbumTrackNumber bool, spotifyCoverURL string, embedMaxQualityCover bool, spotifyTrackNumber, spotifyDiscNumber, spotifyTotalTracks int, spotifyTotalDiscs int, spotifyCopyright, spotifyPublisher, spotifyURL string, allowFallback bool, useFirstArtistOnly bool, useSingleGenre bool) (string, error) {
 	var deezerISRC string
 	if spotifyID != "" {
 		songlinkClient := NewSongLinkClient()
@@ -446,11 +366,27 @@ func (q *QobuzDownloader) DownloadTrack(spotifyID, outputDir, quality, filenameF
 		return "", fmt.Errorf("spotify ID is required for Qobuz download")
 	}
 
-	return q.DownloadTrackWithISRC(deezerISRC, spotifyID, outputDir, quality, filenameFormat, includeTrackNumber, position, spotifyTrackName, spotifyArtistName, spotifyAlbumName, spotifyAlbumArtist, spotifyReleaseDate, useAlbumTrackNumber, spotifyCoverURL, embedMaxQualityCover, spotifyTrackNumber, spotifyDiscNumber, spotifyTotalTracks, spotifyTotalDiscs, spotifyCopyright, spotifyPublisher, spotifyURL, allowFallback, useFirstArtistOnly)
+	return q.DownloadTrackWithISRC(deezerISRC, spotifyID, outputDir, quality, filenameFormat, includeTrackNumber, position, spotifyTrackName, spotifyArtistName, spotifyAlbumName, spotifyAlbumArtist, spotifyReleaseDate, useAlbumTrackNumber, spotifyCoverURL, embedMaxQualityCover, spotifyTrackNumber, spotifyDiscNumber, spotifyTotalTracks, spotifyTotalDiscs, spotifyCopyright, spotifyPublisher, spotifyURL, allowFallback, useFirstArtistOnly, useSingleGenre)
 }
 
-func (q *QobuzDownloader) DownloadTrackWithISRC(deezerISRC, spotifyID, outputDir, quality, filenameFormat string, includeTrackNumber bool, position int, spotifyTrackName, spotifyArtistName, spotifyAlbumName, spotifyAlbumArtist, spotifyReleaseDate string, useAlbumTrackNumber bool, spotifyCoverURL string, embedMaxQualityCover bool, spotifyTrackNumber, spotifyDiscNumber, spotifyTotalTracks int, spotifyTotalDiscs int, spotifyCopyright, spotifyPublisher, spotifyURL string, allowFallback bool, useFirstArtistOnly bool) (string, error) {
+func (q *QobuzDownloader) DownloadTrackWithISRC(deezerISRC, spotifyID, outputDir, quality, filenameFormat string, includeTrackNumber bool, position int, spotifyTrackName, spotifyArtistName, spotifyAlbumName, spotifyAlbumArtist, spotifyReleaseDate string, useAlbumTrackNumber bool, spotifyCoverURL string, embedMaxQualityCover bool, spotifyTrackNumber, spotifyDiscNumber, spotifyTotalTracks int, spotifyTotalDiscs int, spotifyCopyright, spotifyPublisher, spotifyURL string, allowFallback bool, useFirstArtistOnly bool, useSingleGenre bool) (string, error) {
 	fmt.Printf("Fetching track info for ISRC: %s\n", deezerISRC)
+
+	metaChan := make(chan Metadata, 1)
+	if deezerISRC != "" {
+		go func() {
+			fmt.Println("Fetching MusicBrainz metadata...")
+			if fetchedMeta, err := FetchMusicBrainzMetadata(deezerISRC, spotifyTrackName, spotifyArtistName, spotifyAlbumName, useSingleGenre); err == nil {
+				fmt.Println("✓ MusicBrainz metadata fetched")
+				metaChan <- fetchedMeta
+			} else {
+				fmt.Printf("Warning: Failed to fetch MusicBrainz metadata: %v\n", err)
+				metaChan <- Metadata{}
+			}
+		}()
+	} else {
+		close(metaChan)
+	}
 
 	if outputDir != "." {
 		if err := os.MkdirAll(outputDir, 0755); err != nil {
@@ -532,6 +468,11 @@ func (q *QobuzDownloader) DownloadTrackWithISRC(deezerISRC, spotifyID, outputDir
 		}
 	}
 
+	var mbMeta Metadata
+	if deezerISRC != "" {
+		mbMeta = <-metaChan
+	}
+
 	fmt.Println("Embedding metadata and cover art...")
 
 	trackNumberToEmbed := spotifyTrackNumber
@@ -554,6 +495,7 @@ func (q *QobuzDownloader) DownloadTrackWithISRC(deezerISRC, spotifyID, outputDir
 		Publisher:   spotifyPublisher,
 		Description: "https://github.com/afkarxyz/SpotiFLAC",
 		ISRC:        deezerISRC,
+		Genre:       mbMeta.Genre,
 	}
 
 	if err := EmbedMetadata(filepath, metadata, coverPath); err != nil {

@@ -201,6 +201,7 @@ export function useDownload(region: string) {
                             copyright: copyright,
                             publisher: publisher,
                             use_first_artist_only: settings.useFirstArtistOnly,
+                            use_single_genre: settings.useSingleGenre,
                         });
                         if (response.success) {
                             logger.success(`tidal: ${trackName} - ${artistName}`);
@@ -242,6 +243,7 @@ export function useDownload(region: string) {
                             spotify_total_discs: spotifyTotalDiscs,
                             copyright: copyright,
                             publisher: publisher,
+                            use_single_genre: settings.useSingleGenre,
                         });
                         if (response.success) {
                             logger.success(`amazon: ${trackName} - ${artistName}`);
@@ -283,6 +285,7 @@ export function useDownload(region: string) {
                             spotify_total_discs: spotifyTotalDiscs,
                             copyright: copyright,
                             publisher: publisher,
+                            use_single_genre: settings.useSingleGenre,
                         });
                         if (response.success) {
                             logger.success(`qobuz: ${trackName} - ${artistName}`);
@@ -337,6 +340,7 @@ export function useDownload(region: string) {
             spotify_total_discs: spotifyTotalDiscs,
             copyright: copyright,
             publisher: publisher,
+            use_single_genre: settings.useSingleGenre,
         });
         if (!singleServiceResponse.success && itemID) {
             const { MarkDownloadItemFailed } = await import("../../wailsjs/go/main/App");
@@ -451,6 +455,7 @@ export function useDownload(region: string) {
                             copyright: copyright,
                             publisher: publisher,
                             use_first_artist_only: settings.useFirstArtistOnly,
+                            use_single_genre: settings.useSingleGenre,
                         });
                         if (response.success) {
                             return response;
@@ -490,6 +495,7 @@ export function useDownload(region: string) {
                             copyright: copyright,
                             publisher: publisher,
                             use_first_artist_only: settings.useFirstArtistOnly,
+                            use_single_genre: settings.useSingleGenre,
                         });
                         if (response.success) {
                             return response;
@@ -530,6 +536,7 @@ export function useDownload(region: string) {
                             copyright: copyright,
                             publisher: publisher,
                             use_first_artist_only: settings.useFirstArtistOnly,
+                            use_single_genre: settings.useSingleGenre,
                         });
                         if (response.success) {
                             return response;

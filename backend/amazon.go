@@ -1,7 +1,6 @@
 package backend
 
 import (
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -52,7 +51,7 @@ func (a *AmazonDownloader) GetAmazonURLFromSpotify(spotifyTrackID string) (strin
 	if err != nil {
 		return "", fmt.Errorf("failed to create request: %w", err)
 	}
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36")
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36")
 
 	fmt.Println("Getting Amazon URL...")
 
@@ -96,8 +95,7 @@ func (a *AmazonDownloader) GetAmazonURLFromSpotify(spotifyTrackID string) (strin
 		parts := strings.Split(amazonURL, "trackAsin=")
 		if len(parts) > 1 {
 			trackAsin := strings.Split(parts[1], "&")[0]
-			musicBase, _ := base64.StdEncoding.DecodeString("aHR0cHM6Ly9tdXNpYy5hbWF6b24uY29tL3RyYWNrcy8=")
-			amazonURL = fmt.Sprintf("%s%s?musicTerritory=US", string(musicBase), trackAsin)
+			amazonURL = fmt.Sprintf("https://music.amazon.com/tracks/%s?musicTerritory=US", trackAsin)
 		}
 	}
 
@@ -113,12 +111,12 @@ func (a *AmazonDownloader) DownloadFromAfkarXYZ(amazonURL, outputDir, quality st
 		return "", fmt.Errorf("failed to extract ASIN from URL: %s", amazonURL)
 	}
 
-	apiURL := fmt.Sprintf("https://amazon.afkarxyz.fun/api/track/%s", asin)
+	apiURL := fmt.Sprintf("https://amz.afkarxyz.fun/api/track/%s", asin)
 	req, err := http.NewRequest("GET", apiURL, nil)
 	if err != nil {
 		return "", err
 	}
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36")
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36")
 
 	fmt.Printf("Fetching from Amazon API (ASIN: %s)...\n", asin)
 	resp, err := a.client.Do(req)
@@ -156,7 +154,7 @@ func (a *AmazonDownloader) DownloadFromAfkarXYZ(amazonURL, outputDir, quality st
 	defer out.Close()
 
 	dlReq, _ := http.NewRequest("GET", downloadURL, nil)
-	dlReq.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36")
+	dlReq.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36")
 
 	dlResp, err := a.client.Do(dlReq)
 	if err != nil {
@@ -261,7 +259,7 @@ func (a *AmazonDownloader) DownloadFromService(amazonURL, outputDir, quality str
 	return a.DownloadFromAfkarXYZ(amazonURL, outputDir, quality)
 }
 
-func (a *AmazonDownloader) DownloadByURL(amazonURL, outputDir, quality, filenameFormat, playlistName, playlistOwner string, includeTrackNumber bool, position int, spotifyTrackName, spotifyArtistName, spotifyAlbumName, spotifyAlbumArtist, spotifyReleaseDate, spotifyCoverURL string, spotifyTrackNumber, spotifyDiscNumber, spotifyTotalTracks int, embedMaxQualityCover bool, spotifyTotalDiscs int, spotifyCopyright, spotifyPublisher, spotifyURL string, useFirstArtistOnly bool) (string, error) {
+func (a *AmazonDownloader) DownloadByURL(amazonURL, outputDir, quality, filenameFormat, playlistName, playlistOwner string, includeTrackNumber bool, position int, spotifyTrackName, spotifyArtistName, spotifyAlbumName, spotifyAlbumArtist, spotifyReleaseDate, spotifyCoverURL string, spotifyTrackNumber, spotifyDiscNumber, spotifyTotalTracks int, embedMaxQualityCover bool, spotifyTotalDiscs int, spotifyCopyright, spotifyPublisher, spotifyURL string, useFirstArtistOnly bool, useSingleGenre bool) (string, error) {
 
 	if outputDir != "." {
 		if err := os.MkdirAll(outputDir, 0755); err != nil {
@@ -285,9 +283,15 @@ func (a *AmazonDownloader) DownloadByURL(amazonURL, outputDir, quality, filename
 		}
 	}
 
-	isrcChan := make(chan string, 1)
+	type mbResult struct {
+		ISRC     string
+		Metadata Metadata
+	}
+
+	metaChan := make(chan mbResult, 1)
 	if spotifyURL != "" {
 		go func() {
+			res := mbResult{}
 			var isrc string
 			parts := strings.Split(spotifyURL, "/")
 			if len(parts) > 0 {
@@ -299,10 +303,20 @@ func (a *AmazonDownloader) DownloadByURL(amazonURL, outputDir, quality, filename
 					}
 				}
 			}
-			isrcChan <- isrc
+			res.ISRC = isrc
+			if isrc != "" {
+				fmt.Println("Fetching MusicBrainz metadata...")
+				if fetchedMeta, err := FetchMusicBrainzMetadata(isrc, spotifyTrackName, spotifyArtistName, spotifyAlbumName, useSingleGenre); err == nil {
+					res.Metadata = fetchedMeta
+					fmt.Println("✓ MusicBrainz metadata fetched")
+				} else {
+					fmt.Printf("Warning: Failed to fetch MusicBrainz metadata: %v\n", err)
+				}
+			}
+			metaChan <- res
 		}()
 	} else {
-		close(isrcChan)
+		close(metaChan)
 	}
 
 	fmt.Printf("Using Amazon URL: %s\n", amazonURL)
@@ -313,8 +327,11 @@ func (a *AmazonDownloader) DownloadByURL(amazonURL, outputDir, quality, filename
 	}
 
 	var isrc string
+	var mbMeta Metadata
 	if spotifyURL != "" {
-		isrc = <-isrcChan
+		result := <-metaChan
+		isrc = result.ISRC
+		mbMeta = result.Metadata
 	}
 
 	originalFileDir := filepath.Dir(filePath)
@@ -428,6 +445,7 @@ func (a *AmazonDownloader) DownloadByURL(amazonURL, outputDir, quality, filename
 		Publisher:   spotifyPublisher,
 		Description: "https://github.com/afkarxyz/SpotiFLAC",
 		ISRC:        isrc,
+		Genre:       mbMeta.Genre,
 	}
 
 	if err := EmbedMetadataToConvertedFile(filePath, metadata, coverPath); err != nil {
@@ -454,7 +472,7 @@ func (a *AmazonDownloader) DownloadByURL(amazonURL, outputDir, quality, filename
 }
 
 func (a *AmazonDownloader) DownloadBySpotifyID(spotifyTrackID, outputDir, quality, filenameFormat, playlistName, playlistOwner string, includeTrackNumber bool, position int, spotifyTrackName, spotifyArtistName, spotifyAlbumName, spotifyAlbumArtist, spotifyReleaseDate, spotifyCoverURL string, spotifyTrackNumber, spotifyDiscNumber, spotifyTotalTracks int, embedMaxQualityCover bool, spotifyTotalDiscs int, spotifyCopyright, spotifyPublisher, spotifyURL string,
-	useFirstArtistOnly bool,
+	useFirstArtistOnly bool, useSingleGenre bool,
 ) (string, error) {
 
 	amazonURL, err := a.GetAmazonURLFromSpotify(spotifyTrackID)
@@ -462,5 +480,5 @@ func (a *AmazonDownloader) DownloadBySpotifyID(spotifyTrackID, outputDir, qualit
 		return "", err
 	}
 
-	return a.DownloadByURL(amazonURL, outputDir, quality, filenameFormat, playlistName, playlistOwner, includeTrackNumber, position, spotifyTrackName, spotifyArtistName, spotifyAlbumName, spotifyAlbumArtist, spotifyReleaseDate, spotifyCoverURL, spotifyTrackNumber, spotifyDiscNumber, spotifyTotalTracks, embedMaxQualityCover, spotifyTotalDiscs, spotifyCopyright, spotifyPublisher, spotifyURL, useFirstArtistOnly)
+	return a.DownloadByURL(amazonURL, outputDir, quality, filenameFormat, playlistName, playlistOwner, includeTrackNumber, position, spotifyTrackName, spotifyArtistName, spotifyAlbumName, spotifyAlbumArtist, spotifyReleaseDate, spotifyCoverURL, spotifyTrackNumber, spotifyDiscNumber, spotifyTotalTracks, embedMaxQualityCover, spotifyTotalDiscs, spotifyCopyright, spotifyPublisher, spotifyURL, useFirstArtistOnly, useSingleGenre)
 }

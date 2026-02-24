@@ -451,6 +451,15 @@ export function SettingsPage({ onUnsavedChangesChange, onResetRequest, }: Settin
                     Embed Max Quality Cover
                   </Label>
                 </div>
+                <div className="flex items-center gap-3">
+                  <Switch id="use-single-genre" checked={tempSettings.useSingleGenre} onCheckedChange={(checked) => setTempSettings((prev) => ({
+                ...prev,
+                useSingleGenre: checked,
+            }))}/>
+                  <Label htmlFor="use-single-genre" className="text-sm cursor-pointer font-normal">
+                    Use Single Genre
+                  </Label>
+                </div>
               </div>
             </div>
           </div>)}
@@ -539,6 +548,8 @@ export function SettingsPage({ onUnsavedChangesChange, onResetRequest, }: Settin
                   Use First Artist Only
                 </Label>
               </div>
+
+
             </div>
 
             <div className="space-y-2">
