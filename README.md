@@ -76,7 +76,7 @@ Your support helps keep development going._
 
 This project is for **educational and private use only**. The developer does not condone or encourage copyright infringement.
 
-**SpotiFLAC** is a third-party tool and is not affiliated with, endorsed by, or connected to Spotify, Tidal, Qobuz, Amazon Music, or any other streaming service.
+**SpotiFLAC** is a third-party tool and is not affiliated with, endorsed by, or connected to Spotify, Tidal, Qobuz, Amazon Music, Deezer or any other streaming service.
 
 You are solely responsible for:
 
