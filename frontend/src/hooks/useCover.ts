@@ -2,7 +2,7 @@ import { useState, useRef } from "react";
 import { downloadCover } from "@/lib/api";
 import { getSettings, parseTemplate, type TemplateData } from "@/lib/settings";
 import { toastWithSound as toast } from "@/lib/toast-with-sound";
-import { joinPath, sanitizePath } from "@/lib/utils";
+import { joinPath, sanitizePath, getFirstArtist } from "@/lib/utils";
 import { logger } from "@/lib/logger";
 import type { TrackMetadata } from "@/types/api";
 export function useCover() {
@@ -29,12 +29,16 @@ export function useCover() {
             let outputDir = settings.downloadPath;
             const placeholder = "__SLASH_PLACEHOLDER__";
             const yearValue = releaseDate?.substring(0, 4);
+            const displayArtist = settings.useFirstArtistOnly && artistName ? getFirstArtist(artistName) : artistName;
+            const displayAlbumArtist = settings.useFirstArtistOnly && albumArtist ? getFirstArtist(albumArtist) : albumArtist;
             const templateData: TemplateData = {
-                artist: artistName?.replace(/\//g, placeholder),
+                artist: displayArtist?.replace(/\//g, placeholder),
                 album: albumName?.replace(/\//g, placeholder),
+                album_artist: displayAlbumArtist?.replace(/\//g, placeholder) || displayArtist?.replace(/\//g, placeholder),
                 title: trackName?.replace(/\//g, placeholder),
                 track: position,
                 year: yearValue,
+                date: releaseDate,
                 playlist: playlistName?.replace(/\//g, placeholder),
             };
             const folderTemplate = settings.folderTemplate || "";
@@ -55,9 +59,9 @@ export function useCover() {
             const response = await downloadCover({
                 cover_url: coverUrl,
                 track_name: trackName,
-                artist_name: artistName,
+                artist_name: displayArtist,
                 album_name: albumName || "",
-                album_artist: albumArtist || "",
+                album_artist: displayAlbumArtist || "",
                 release_date: releaseDate || "",
                 output_dir: outputDir,
                 filename_format: settings.filenameTemplate || "{title}",
@@ -127,12 +131,16 @@ export function useCover() {
                 const useAlbumTrackNumber = settings.folderTemplate?.includes("{album}") || false;
                 const trackPosition = useAlbumTrackNumber ? (track.track_number || i + 1) : (i + 1);
                 const yearValue = track.release_date?.substring(0, 4);
+                const displayArtist = settings.useFirstArtistOnly && track.artists ? getFirstArtist(track.artists) : track.artists;
+                const displayAlbumArtist = settings.useFirstArtistOnly && track.album_artist ? getFirstArtist(track.album_artist) : track.album_artist;
                 const templateData: TemplateData = {
-                    artist: track.artists?.replace(/\//g, placeholder),
+                    artist: displayArtist?.replace(/\//g, placeholder),
                     album: track.album_name?.replace(/\//g, placeholder),
+                    album_artist: displayAlbumArtist?.replace(/\//g, placeholder) || displayArtist?.replace(/\//g, placeholder),
                     title: track.name?.replace(/\//g, placeholder),
                     track: trackPosition,
                     year: yearValue,
+                    date: track.release_date,
                     playlist: playlistName?.replace(/\//g, placeholder),
                 };
                 const folderTemplate = settings.folderTemplate || "";
@@ -153,9 +161,9 @@ export function useCover() {
                 const response = await downloadCover({
                     cover_url: track.images,
                     track_name: track.name,
-                    artist_name: track.artists,
+                    artist_name: displayArtist,
                     album_name: track.album_name,
-                    album_artist: track.album_artist,
+                    album_artist: displayAlbumArtist,
                     release_date: track.release_date,
                     output_dir: outputDir,
                     filename_format: settings.filenameTemplate || "{title}",

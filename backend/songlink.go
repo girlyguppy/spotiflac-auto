@@ -28,9 +28,11 @@ type TrackAvailability struct {
 	Tidal     bool   `json:"tidal"`
 	Amazon    bool   `json:"amazon"`
 	Qobuz     bool   `json:"qobuz"`
+	Deezer    bool   `json:"deezer"`
 	TidalURL  string `json:"tidal_url,omitempty"`
 	AmazonURL string `json:"amazon_url,omitempty"`
 	QobuzURL  string `json:"qobuz_url,omitempty"`
+	DeezerURL string `json:"deezer_url,omitempty"`
 }
 
 func NewSongLinkClient() *SongLinkClient {
@@ -279,6 +281,8 @@ func (s *SongLinkClient) CheckTrackAvailability(spotifyTrackID string) (*TrackAv
 
 	if deezerLink, ok := songLinkResp.LinksByPlatform["deezer"]; ok && deezerLink.URL != "" {
 		deezerURL := deezerLink.URL
+		availability.Deezer = true
+		availability.DeezerURL = deezerURL
 
 		deezerISRC, err := getDeezerISRC(deezerURL)
 		if err == nil && deezerISRC != "" {

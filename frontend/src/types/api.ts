@@ -108,7 +108,7 @@ export interface ArtistResponse {
 }
 export type SpotifyMetadataResponse = TrackResponse | AlbumResponse | PlaylistResponse | ArtistDiscographyResponse | ArtistResponse;
 export interface DownloadRequest {
-    service: "tidal" | "qobuz" | "amazon";
+    service: "tidal" | "qobuz" | "amazon" | "deezer";
     query?: string;
     track_name?: string;
     artist_name?: string;
@@ -139,6 +139,7 @@ export interface DownloadRequest {
     spotify_url?: string;
     use_first_artist_only?: boolean;
     use_single_genre?: boolean;
+    embed_genre?: boolean;
 }
 export interface DownloadResponse {
     success: boolean;
@@ -203,9 +204,11 @@ export interface TrackAvailability {
     tidal: boolean;
     amazon: boolean;
     qobuz: boolean;
+    deezer: boolean;
     tidal_url?: string;
     amazon_url?: string;
     qobuz_url?: string;
+    deezer_url?: string;
 }
 export interface CoverDownloadRequest {
     cover_url: string;

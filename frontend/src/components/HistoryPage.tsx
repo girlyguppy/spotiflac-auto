@@ -303,7 +303,7 @@ export function HistoryPage({ onHistorySelect }: HistoryPageProps) {
                                          <td className="p-3 align-middle text-left hidden lg:table-cell">
                                             <div className="flex flex-col items-start gap-1">
                                                 <span className="text-xs font-bold text-foreground">
-                                                    {['HI_RES_LOSSLESS', 'LOSSLESS'].includes(item.format) ? 'FLAC' : item.format}
+                                                    {['HI_RES_LOSSLESS', 'LOSSLESS', 'flac', '6', '7', '27'].includes(item.format?.toLowerCase() || '') ? 'FLAC' : item.format?.toUpperCase()}
                                                 </span>
                                                 {item.quality && <span className="text-[11px] text-muted-foreground leading-none whitespace-nowrap">{item.quality}</span>}
                                             </div>

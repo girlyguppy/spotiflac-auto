@@ -2,16 +2,9 @@ import { useState, useRef } from "react";
 import { downloadTrack, fetchSpotifyMetadata } from "@/lib/api";
 import { getSettings, parseTemplate, type TemplateData } from "@/lib/settings";
 import { toastWithSound as toast } from "@/lib/toast-with-sound";
-import { joinPath, sanitizePath } from "@/lib/utils";
+import { joinPath, sanitizePath, getFirstArtist } from "@/lib/utils";
 import { logger } from "@/lib/logger";
 import type { TrackMetadata } from "@/types/api";
-function getFirstArtist(artistString: string): string {
-    if (!artistString)
-        return artistString;
-    const delimiters = /[,&]|(?:\s+(?:feat\.?|ft\.?|featuring)\s+)/i;
-    const parts = artistString.split(delimiters);
-    return parts[0].trim();
-}
 interface CheckFileExistenceRequest {
     spotify_id: string;
     track_name: string;
@@ -95,6 +88,7 @@ export function useDownload(region: string) {
             title: trackName?.replace(/\//g, placeholder),
             track: trackNumberForTemplate,
             year: yearValue,
+            date: releaseDate,
             playlist: playlistName?.replace(/\//g, placeholder),
         };
         const folderTemplate = settings.folderTemplate || "";
@@ -166,9 +160,10 @@ export function useDownload(region: string) {
             const durationSeconds = durationMs ? Math.round(durationMs / 1000) : undefined;
             const order = (settings.autoOrder || "tidal-amazon-qobuz").split("-");
             let lastResponse: any = { success: false, error: "No matching services found" };
+            const fallbackErrors: string[] = [];
             const is24Bit = (settings.autoQuality || "24") === "24";
             const tidalQuality = is24Bit ? "HI_RES_LOSSLESS" : "LOSSLESS";
-            const qobuzQuality = is24Bit ? "7" : "6";
+            const qobuzQuality = is24Bit ? "27" : "6";
             for (const s of order) {
                 if (s === "tidal" && streamingURLs?.tidal_url) {
                     try {
@@ -202,16 +197,20 @@ export function useDownload(region: string) {
                             publisher: publisher,
                             use_first_artist_only: settings.useFirstArtistOnly,
                             use_single_genre: settings.useSingleGenre,
+                            embed_genre: settings.embedGenre,
                         });
                         if (response.success) {
                             logger.success(`tidal: ${trackName} - ${artistName}`);
                             return response;
                         }
+                        const errMsg = response.error || response.message || "Failed";
+                        fallbackErrors.push(`[Tidal] ${errMsg}`);
                         lastResponse = response;
                         logger.warning(`tidal failed, trying next...`);
                     }
                     catch (err) {
                         logger.error(`tidal error: ${err}`);
+                        fallbackErrors.push(`[Tidal] ${String(err)}`);
                         lastResponse = { success: false, error: String(err) };
                     }
                 }
@@ -244,16 +243,20 @@ export function useDownload(region: string) {
                             copyright: copyright,
                             publisher: publisher,
                             use_single_genre: settings.useSingleGenre,
+                            embed_genre: settings.embedGenre,
                         });
                         if (response.success) {
                             logger.success(`amazon: ${trackName} - ${artistName}`);
                             return response;
                         }
+                        const errMsg = response.error || response.message || "Failed";
+                        fallbackErrors.push(`[Amazon] ${errMsg}`);
                         lastResponse = response;
                         logger.warning(`amazon failed, trying next...`);
                     }
                     catch (err) {
                         logger.error(`amazon error: ${err}`);
+                        fallbackErrors.push(`[Amazon] ${String(err)}`);
                         lastResponse = { success: false, error: String(err) };
                     }
                 }
@@ -286,23 +289,76 @@ export function useDownload(region: string) {
                             copyright: copyright,
                             publisher: publisher,
                             use_single_genre: settings.useSingleGenre,
+                            embed_genre: settings.embedGenre,
                         });
                         if (response.success) {
                             logger.success(`qobuz: ${trackName} - ${artistName}`);
                             return response;
                         }
+                        const errMsg = response.error || response.message || "Failed";
+                        fallbackErrors.push(`[Qobuz] ${errMsg}`);
                         lastResponse = response;
                         logger.warning(`qobuz failed, trying next...`);
                     }
                     catch (err) {
                         logger.error(`qobuz error: ${err}`);
+                        fallbackErrors.push(`[Qobuz] ${String(err)}`);
+                        lastResponse = { success: false, error: String(err) };
+                    }
+                }
+                else if (s === "deezer") {
+                    try {
+                        logger.debug(`trying deezer for: ${trackName} - ${artistName}`);
+                        const response = await downloadTrack({
+                            service: "deezer",
+                            query,
+                            track_name: trackName,
+                            artist_name: displayArtist,
+                            album_name: albumName,
+                            album_artist: displayAlbumArtist,
+                            release_date: finalReleaseDate || releaseDate,
+                            cover_url: coverUrl,
+                            output_dir: outputDir,
+                            filename_format: settings.filenameTemplate,
+                            track_number: settings.trackNumber,
+                            position,
+                            use_album_track_number: useAlbumTrackNumber,
+                            spotify_id: spotifyId,
+                            embed_lyrics: settings.embedLyrics,
+                            embed_max_quality_cover: settings.embedMaxQualityCover,
+                            duration: durationSeconds,
+                            item_id: itemID,
+                            audio_format: "flac",
+                            spotify_track_number: spotifyTrackNumber,
+                            spotify_disc_number: spotifyDiscNumber,
+                            spotify_total_tracks: spotifyTotalTracks,
+                            spotify_total_discs: spotifyTotalDiscs,
+                            copyright: copyright,
+                            publisher: publisher,
+                            use_first_artist_only: settings.useFirstArtistOnly,
+                            use_single_genre: settings.useSingleGenre,
+                            embed_genre: settings.embedGenre,
+                        });
+                        if (response.success) {
+                            logger.success(`deezer: ${trackName} - ${artistName}`);
+                            return response;
+                        }
+                        const errMsg = response.error || response.message || "Failed";
+                        fallbackErrors.push(`[Deezer] ${errMsg}`);
+                        lastResponse = response;
+                        logger.warning(`deezer failed, trying next...`);
+                    }
+                    catch (err) {
+                        logger.error(`deezer error: ${err}`);
+                        fallbackErrors.push(`[Deezer] ${String(err)}`);
                         lastResponse = { success: false, error: String(err) };
                     }
                 }
             }
             if (itemID) {
                 const { MarkDownloadItemFailed } = await import("../../wailsjs/go/main/App");
-                await MarkDownloadItemFailed(itemID, lastResponse.error || "All services failed");
+                const finalError = fallbackErrors.length > 0 ? fallbackErrors.join(" | ") : (lastResponse.error || "All services failed");
+                await MarkDownloadItemFailed(itemID, finalError);
             }
             return lastResponse;
         }
@@ -314,8 +370,12 @@ export function useDownload(region: string) {
         else if (service === "qobuz") {
             audioFormat = settings.qobuzQuality || "6";
         }
+        else if (service === "deezer") {
+            audioFormat = "flac";
+        }
+        logger.debug(`trying ${service} for: ${trackName} - ${artistName}`);
         const singleServiceResponse = await downloadTrack({
-            service: service as "tidal" | "qobuz" | "amazon",
+            service: service as "tidal" | "qobuz" | "amazon" | "deezer",
             query,
             track_name: trackName,
             artist_name: displayArtist,
@@ -341,6 +401,7 @@ export function useDownload(region: string) {
             copyright: copyright,
             publisher: publisher,
             use_single_genre: settings.useSingleGenre,
+            embed_genre: settings.embedGenre,
         });
         if (!singleServiceResponse.success && itemID) {
             const { MarkDownloadItemFailed } = await import("../../wailsjs/go/main/App");
@@ -389,6 +450,7 @@ export function useDownload(region: string) {
             title: trackName?.replace(/\//g, placeholder),
             track: trackNumberForTemplate,
             year: yearValue,
+            date: releaseDate,
             playlist: folderName?.replace(/\//g, placeholder),
         };
         const folderTemplate = settings.folderTemplate || "";
@@ -421,12 +483,14 @@ export function useDownload(region: string) {
             const durationSeconds = durationMs ? Math.round(durationMs / 1000) : undefined;
             const order = (settings.autoOrder || "tidal-amazon-qobuz").split("-");
             let lastResponse: any = { success: false, error: "No matching services found" };
+            const fallbackErrors: string[] = [];
             const is24Bit = (settings.autoQuality || "24") === "24";
             const tidalQuality = is24Bit ? "HI_RES_LOSSLESS" : "LOSSLESS";
-            const qobuzQuality = is24Bit ? "7" : "6";
+            const qobuzQuality = is24Bit ? "27" : "6";
             for (const s of order) {
                 if (s === "tidal" && streamingURLs?.tidal_url) {
                     try {
+                        logger.debug(`trying tidal for: ${trackName} - ${artistName}`);
                         const response = await downloadTrack({
                             service: "tidal",
                             query,
@@ -456,19 +520,26 @@ export function useDownload(region: string) {
                             publisher: publisher,
                             use_first_artist_only: settings.useFirstArtistOnly,
                             use_single_genre: settings.useSingleGenre,
+                            embed_genre: settings.embedGenre,
                         });
                         if (response.success) {
+                            logger.success(`tidal: ${trackName} - ${artistName}`);
                             return response;
                         }
+                        const errMsg = response.error || response.message || "Failed";
+                        fallbackErrors.push(`[Tidal] ${errMsg}`);
                         lastResponse = response;
+                        logger.warning(`tidal failed, trying next...`);
                     }
                     catch (err) {
-                        console.error("Tidal error:", err);
+                        logger.error(`tidal error: ${err}`);
+                        fallbackErrors.push(`[Tidal] ${String(err)}`);
                         lastResponse = { success: false, error: String(err) };
                     }
                 }
                 else if (s === "amazon" && streamingURLs?.amazon_url) {
                     try {
+                        logger.debug(`trying amazon for: ${trackName} - ${artistName}`);
                         const response = await downloadTrack({
                             service: "amazon",
                             query,
@@ -496,19 +567,26 @@ export function useDownload(region: string) {
                             publisher: publisher,
                             use_first_artist_only: settings.useFirstArtistOnly,
                             use_single_genre: settings.useSingleGenre,
+                            embed_genre: settings.embedGenre,
                         });
                         if (response.success) {
+                            logger.success(`amazon: ${trackName} - ${artistName}`);
                             return response;
                         }
+                        const errMsg = response.error || response.message || "Failed";
+                        fallbackErrors.push(`[Amazon] ${errMsg}`);
                         lastResponse = response;
+                        logger.warning(`amazon failed, trying next...`);
                     }
                     catch (err) {
-                        console.error("Amazon error:", err);
+                        logger.error(`amazon error: ${err}`);
+                        fallbackErrors.push(`[Amazon] ${String(err)}`);
                         lastResponse = { success: false, error: String(err) };
                     }
                 }
                 else if (s === "qobuz") {
                     try {
+                        logger.debug(`trying qobuz for: ${trackName} - ${artistName}`);
                         const response = await downloadTrack({
                             service: "qobuz",
                             query,
@@ -537,21 +615,76 @@ export function useDownload(region: string) {
                             publisher: publisher,
                             use_first_artist_only: settings.useFirstArtistOnly,
                             use_single_genre: settings.useSingleGenre,
+                            embed_genre: settings.embedGenre,
                         });
                         if (response.success) {
+                            logger.success(`qobuz: ${trackName} - ${artistName}`);
                             return response;
                         }
+                        const errMsg = response.error || response.message || "Failed";
+                        fallbackErrors.push(`[Qobuz] ${errMsg}`);
                         lastResponse = response;
+                        logger.warning(`qobuz failed, trying next...`);
                     }
                     catch (err) {
-                        console.error("Qobuz error:", err);
+                        logger.error(`qobuz error: ${err}`);
+                        fallbackErrors.push(`[Qobuz] ${String(err)}`);
+                        lastResponse = { success: false, error: String(err) };
+                    }
+                }
+                else if (s === "deezer") {
+                    try {
+                        logger.debug(`trying deezer for: ${trackName} - ${artistName}`);
+                        const response = await downloadTrack({
+                            service: "deezer",
+                            query,
+                            track_name: trackName,
+                            artist_name: displayArtist,
+                            album_name: albumName,
+                            album_artist: displayAlbumArtist,
+                            release_date: finalReleaseDate || releaseDate,
+                            cover_url: coverUrl,
+                            output_dir: outputDir,
+                            filename_format: settings.filenameTemplate,
+                            track_number: settings.trackNumber,
+                            position: trackNumberForTemplate,
+                            use_album_track_number: useAlbumTrackNumber,
+                            spotify_id: spotifyId,
+                            embed_lyrics: settings.embedLyrics,
+                            embed_max_quality_cover: settings.embedMaxQualityCover,
+                            duration: durationSeconds,
+                            item_id: itemID,
+                            audio_format: "flac",
+                            spotify_track_number: spotifyTrackNumber,
+                            spotify_disc_number: spotifyDiscNumber,
+                            spotify_total_tracks: spotifyTotalTracks,
+                            spotify_total_discs: spotifyTotalDiscs,
+                            copyright: copyright,
+                            publisher: publisher,
+                            use_first_artist_only: settings.useFirstArtistOnly,
+                            use_single_genre: settings.useSingleGenre,
+                            embed_genre: settings.embedGenre,
+                        });
+                        if (response.success) {
+                            logger.success(`deezer: ${trackName} - ${artistName}`);
+                            return response;
+                        }
+                        const errMsg = response.error || response.message || "Failed";
+                        fallbackErrors.push(`[Deezer] ${errMsg}`);
+                        lastResponse = response;
+                        logger.warning(`deezer failed, trying next...`);
+                    }
+                    catch (err) {
+                        logger.error(`deezer error: ${err}`);
+                        fallbackErrors.push(`[Deezer] ${String(err)}`);
                         lastResponse = { success: false, error: String(err) };
                     }
                 }
             }
             if (!lastResponse.success && itemID) {
                 const { MarkDownloadItemFailed } = await import("../../wailsjs/go/main/App");
-                await MarkDownloadItemFailed(itemID, lastResponse.error || "All services failed");
+                const finalError = fallbackErrors.length > 0 ? fallbackErrors.join(" | ") : (lastResponse.error || "All services failed");
+                await MarkDownloadItemFailed(itemID, finalError);
             }
             return lastResponse;
         }
@@ -563,8 +696,11 @@ export function useDownload(region: string) {
         else if (service === "qobuz") {
             audioFormat = settings.qobuzQuality || "6";
         }
+        else if (service === "deezer") {
+            audioFormat = "flac";
+        }
         const singleServiceResponse = await downloadTrack({
-            service: service as "tidal" | "qobuz" | "amazon",
+            service: service as "tidal" | "qobuz" | "amazon" | "deezer",
             query,
             track_name: trackName,
             artist_name: displayArtist,
@@ -589,6 +725,9 @@ export function useDownload(region: string) {
             spotify_total_discs: spotifyTotalDiscs,
             copyright: copyright,
             publisher: publisher,
+            use_first_artist_only: settings.useFirstArtistOnly,
+            use_single_genre: settings.useSingleGenre,
+            embed_genre: settings.embedGenre,
         });
         if (!singleServiceResponse.success && itemID) {
             const { MarkDownloadItemFailed } = await import("../../wailsjs/go/main/App");

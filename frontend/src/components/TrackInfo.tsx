@@ -4,7 +4,7 @@ import { Download, FolderOpen, CheckCircle, XCircle, FileText, FileCheck, Globe,
 import { Spinner } from "@/components/ui/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger, } from "@/components/ui/tooltip";
 import type { TrackMetadata, TrackAvailability } from "@/types/api";
-import { TidalIcon, QobuzIcon, AmazonIcon } from "./PlatformIcons";
+import { TidalIcon, QobuzIcon, AmazonIcon, DeezerIcon } from "./PlatformIcons";
 import { usePreview } from "@/hooks/usePreview";
 interface TrackInfoProps {
     track: TrackMetadata & {
@@ -143,6 +143,7 @@ export function TrackInfo({ track, isDownloading, downloadingTrack, isDownloaded
                   <TidalIcon className={`w-4 h-4 ${availability.tidal ? "text-green-500" : "text-red-500"}`}/>
                   <QobuzIcon className={`w-4 h-4 ${availability.qobuz ? "text-green-500" : "text-red-500"}`}/>
                   <AmazonIcon className={`w-4 h-4 ${availability.amazon ? "text-green-500" : "text-red-500"}`}/>
+                  <DeezerIcon className={`w-4 h-4 ${availability.deezer ? "text-green-500" : "text-red-500"}`}/>
                 </div>) : (<p>Check Availability</p>)}
               </TooltipContent>
             </Tooltip>)}

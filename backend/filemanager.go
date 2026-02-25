@@ -332,6 +332,7 @@ func GenerateFilename(metadata *AudioMetadata, format string, ext string) string
 	result = strings.ReplaceAll(result, "{album}", sanitizeFilenameForRename(metadata.Album))
 	result = strings.ReplaceAll(result, "{album_artist}", sanitizeFilenameForRename(metadata.AlbumArtist))
 	result = strings.ReplaceAll(result, "{year}", sanitizeFilenameForRename(year))
+	result = strings.ReplaceAll(result, "{date}", sanitizeFilenameForRename(metadata.Year))
 
 	if metadata.TrackNumber > 0 {
 		result = strings.ReplaceAll(result, "{track}", fmt.Sprintf("%02d", metadata.TrackNumber))

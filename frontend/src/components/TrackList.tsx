@@ -5,7 +5,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger, } from "@/components/ui/tooltip";
 import { Pagination, PaginationContent, PaginationEllipsis, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious, } from "@/components/ui/pagination";
 import type { TrackMetadata, TrackAvailability } from "@/types/api";
-import { TidalIcon, QobuzIcon, AmazonIcon } from "./PlatformIcons";
+import { TidalIcon, QobuzIcon, AmazonIcon, DeezerIcon } from "./PlatformIcons";
 import { usePreview } from "@/hooks/usePreview";
 interface TrackListProps {
     tracks: TrackMetadata[];
@@ -114,6 +114,13 @@ export function TrackList({ tracks, searchQuery, sortBy, selectedTracks, downloa
             const aDownloaded = a.spotify_id ? downloadedTracks.has(a.spotify_id) : false;
             const bDownloaded = b.spotify_id ? downloadedTracks.has(b.spotify_id) : false;
             return (aDownloaded ? 1 : 0) - (bDownloaded ? 1 : 0);
+        });
+    }
+    else if (sortBy === "failed") {
+        filteredTracks = [...filteredTracks].sort((a, b) => {
+            const aFailed = a.spotify_id ? failedTracks.has(a.spotify_id) : false;
+            const bFailed = b.spotify_id ? failedTracks.has(b.spotify_id) : false;
+            return (bFailed ? 1 : 0) - (aFailed ? 1 : 0);
         });
     }
     const totalPages = Math.ceil(filteredTracks.length / itemsPerPage);
@@ -324,6 +331,7 @@ export function TrackList({ tracks, searchQuery, sortBy, selectedTracks, downloa
                         <TidalIcon className={`w-4 h-4 ${availabilityMap.get(track.spotify_id)?.tidal ? "text-green-500" : "text-red-500"}`}/>
                         <QobuzIcon className={`w-4 h-4 ${availabilityMap.get(track.spotify_id)?.qobuz ? "text-green-500" : "text-red-500"}`}/>
                         <AmazonIcon className={`w-4 h-4 ${availabilityMap.get(track.spotify_id)?.amazon ? "text-green-500" : "text-red-500"}`}/>
+                        <DeezerIcon className={`w-4 h-4 ${availabilityMap.get(track.spotify_id)?.deezer ? "text-green-500" : "text-red-500"}`}/>
                       </div>) : (<p>Check Availability</p>)}
                     </TooltipContent>
                   </Tooltip>)}
