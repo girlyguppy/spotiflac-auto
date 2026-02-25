@@ -14,7 +14,6 @@ import { useState, useMemo } from "react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
-
 interface ArtistInfoProps {
     artistInfo: {
         name: string;
@@ -94,14 +93,12 @@ interface ArtistInfoProps {
     onTrackClick?: (track: TrackMetadata) => void;
     onBack?: () => void;
 }
-
 export function ArtistInfo({ artistInfo, albumList, trackList, searchQuery, sortBy, selectedTracks, downloadedTracks, failedTracks, skippedTracks, downloadingTrack, isDownloading, bulkDownloadType, downloadProgress, currentDownloadInfo, currentPage, itemsPerPage, downloadedLyrics, failedLyrics, skippedLyrics, downloadingLyricsTrack, checkingAvailabilityTrack, availabilityMap, downloadedCovers, failedCovers, skippedCovers, downloadingCoverTrack, isBulkDownloadingCovers, isBulkDownloadingLyrics, onSearchChange, onSortChange, onToggleTrack, onToggleSelectAll, onDownloadTrack, onDownloadLyrics, onDownloadCover, onCheckAvailability, onDownloadAllLyrics, onDownloadAllCovers, onDownloadAll, onDownloadSelected, onStopDownload, onOpenFolder, onAlbumClick, onArtistClick, onPageChange, onTrackClick, onBack, }: ArtistInfoProps) {
     const [downloadingHeader, setDownloadingHeader] = useState(false);
     const [downloadingAvatar, setDownloadingAvatar] = useState(false);
     const [downloadingGalleryIndex, setDownloadingGalleryIndex] = useState<number | null>(null);
     const [downloadingAllGallery, setDownloadingAllGallery] = useState(false);
     const [activeTab, setActiveTab] = useState<"albums" | "tracks" | "gallery">("albums");
-
     const filteredAlbumGroups = useMemo(() => {
         const albumTypeMap = new Map(albumList.map(a => [a.name, a.album_type]));
         const albumGroups = trackList.reduce((acc, track) => {
@@ -128,7 +125,6 @@ export function ArtistInfo({ artistInfo, albumList, trackList, searchQuery, sort
             return dateB.localeCompare(dateA);
         });
     }, [trackList, albumList]);
-
     const handleDownloadHeader = async () => {
         if (!artistInfo.header)
             return;
@@ -159,7 +155,6 @@ export function ArtistInfo({ artistInfo, albumList, trackList, searchQuery, sort
             setDownloadingHeader(false);
         }
     };
-
     const handleDownloadAvatar = async () => {
         if (!artistInfo.images)
             return;
@@ -190,7 +185,6 @@ export function ArtistInfo({ artistInfo, albumList, trackList, searchQuery, sort
             setDownloadingAvatar(false);
         }
     };
-
     const handleDownloadGalleryImage = async (imageUrl: string, index: number) => {
         setDownloadingGalleryIndex(index);
         try {
@@ -220,7 +214,6 @@ export function ArtistInfo({ artistInfo, albumList, trackList, searchQuery, sort
             setDownloadingGalleryIndex(null);
         }
     };
-
     const handleDownloadAllGallery = async () => {
         if (!artistInfo.gallery || artistInfo.gallery.length === 0)
             return;
@@ -277,9 +270,7 @@ export function ArtistInfo({ artistInfo, albumList, trackList, searchQuery, sort
             setDownloadingAllGallery(false);
         }
     };
-
     const hasGallery = artistInfo.gallery && artistInfo.gallery.length > 0;
-
     return (<div className="space-y-6">
       <Card className="overflow-hidden p-0 relative">
         {artistInfo.header ? (<>
@@ -462,42 +453,28 @@ export function ArtistInfo({ artistInfo, albumList, trackList, searchQuery, sort
                     {isDownloading && bulkDownloadType === "all" ? (<Spinner />) : (<Download className="h-4 w-4"/>)}
                     Download Discography
                 </Button>
-                {selectedTracks.length > 0 && (
-                    <Button onClick={onDownloadSelected} size="sm" variant="secondary" disabled={isDownloading}>
+                {selectedTracks.length > 0 && (<Button onClick={onDownloadSelected} size="sm" variant="secondary" disabled={isDownloading}>
                         {isDownloading && bulkDownloadType === "selected" ? (<Spinner />) : (<Download className="h-4 w-4"/>)}
                         Download Selected ({selectedTracks.length})
-                    </Button>
-                )}
+                    </Button>)}
             </div>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
             {albumList.map((album) => {
-                // Filter tracks for this specific album to handle selection
                 const albumTracks = trackList.filter(t => t.album_name === album.name);
                 const tracksWithId = albumTracks.filter(t => t.spotify_id);
-                // Check if all tracks in this album are currently selected
                 const isSelected = tracksWithId.length > 0 && tracksWithId.every(t => selectedTracks.includes(t.spotify_id!));
                 const hasTracks = tracksWithId.length > 0;
-
                 return (<div key={album.id} className="group cursor-pointer relative" onClick={() => onAlbumClick({
-                    id: album.id,
-                    name: album.name,
-                    external_urls: album.external_urls,
-                })}>
+                        id: album.id,
+                        name: album.name,
+                        external_urls: album.external_urls,
+                    })}>
                 <div className="relative mb-2">
-                  {/* Checkbox for Album Selection */}
-                  {hasTracks && (
-                    <div 
-                        className={`absolute top-2 left-2 z-20 ${isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'} transition-opacity`}
-                        onClick={(e) => e.stopPropagation()}
-                    >
-                        <Checkbox 
-                            checked={isSelected} 
-                            onCheckedChange={() => onToggleSelectAll(albumTracks)}
-                            className="bg-black/50 border-white/70 data-[state=checked]:bg-primary data-[state=checked]:border-primary"
-                        />
-                    </div>
-                  )}
+                  
+                  {hasTracks && (<div className={`absolute top-2 left-2 z-20 ${isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'} transition-opacity`} onClick={(e) => e.stopPropagation()}>
+                        <Checkbox checked={isSelected} onCheckedChange={() => onToggleSelectAll(albumTracks)} className="bg-black/50 border-white/70 data-[state=checked]:bg-primary data-[state=checked]:border-primary"/>
+                    </div>)}
                   {album.images && (<img src={album.images} alt={album.name} className="w-full aspect-square object-cover rounded-md shadow-md transition-shadow group-hover:shadow-xl"/>)}
                   <div className="absolute bottom-2 right-2">
                     <span className="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded bg-black/60 text-white backdrop-blur-[2px]">
