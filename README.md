@@ -88,7 +88,7 @@ The software is provided "as is", without warranty of any kind. The author assum
 
 ## API Credits
 
-[MusicBrainz](https://musicbrainz.org) · [Spotify Lyrics API](https://github.akashrchandran.in/spotify-lyrics-api) · [LRCLIB](https://lrclib.net) · [Song.link](https://song.link) · [hifi-api](https://github.com/binimum/hifi-api) · [dabmusic.xyz](https://dabmusic.xyz) · [yoinkify.lol](https://yoinkify.lol)
+[MusicBrainz](https://musicbrainz.org) · [Spotify Lyrics API](https://github.akashrchandran.in/spotify-lyrics-api) · [LRCLIB](https://lrclib.net) · [Song.link](https://song.link) · [hifi-api](https://github.com/binimum/hifi-api) · [dabmusic.xyz](https://dabmusic.xyz) · [yoinkify.lol](https://github.com/chasemarshall/yoink)
 
 > [!TIP]
 >
