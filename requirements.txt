@@ -1,0 +1,3 @@
+# FlacJacket uses only stdlib — no external dependencies required.
+# The Spotify Web API is accessed via urllib (stdlib).
+# SQLite is accessed via sqlite3 (stdlib).

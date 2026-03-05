@@ -1,64 +1,26 @@
-# Wails Build
+# Personal deployment files
+deploy/nas-config.json
+deploy/deploy-nas.sh
+
+# Tokens and credentials
+spotify_token.json
+
+# Database and logs
+*.db
+*.sqlite
+*.log
+
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
 build/
-*.exe
-*.dll
-*.dylib
-*.so
+.venv/
+venv/
 
-# Wails Generated Files
-frontend/wailsjs/
-
-# Go
-*.test
-*.out
-go.work
-go.work.sum
-
-# Node / Frontend
-node_modules/
-frontend/node_modules/
-frontend/dist/
-frontend/.vite/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-.pnpm-store/
-.npm
-.yarn
-*.tsbuildinfo
-
-# IDE / Editors
+# IDE
 .vscode/
 .idea/
 *.swp
-*.swo
 *~
-.DS_Store
-
-# OS
-Thumbs.db
-desktop.ini
-
-# Environment
-.env
-.env.local
-.env.*.local
-
-# Logs
-*.log
-logs/
-
-# Temporary files
-tmp/
-temp/
-*.tmp
-*.bak
-*.old
-
-# Test files
-test
-
-# Build notes (optional - uncomment if you don't want to commit)
-# BUILD_NOTES.md
-push.bat

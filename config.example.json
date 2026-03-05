@@ -1,0 +1,21 @@
+{
+  "spotify": {
+    "client_id": "YOUR_CLIENT_ID",
+    "client_secret": "YOUR_CLIENT_SECRET",
+    "redirect_uri": "http://127.0.0.1:8888/callback"
+  },
+  "output_dir": "~/Music",
+  "spotiflac_cli_path": "spotiflac-cli",
+  "poll_interval_minutes": 30,
+  "thresholds": {
+    "album_coverage": 0.5,
+    "album_min_unique_tracks": 2,
+    "track_plays": 3,
+    "playlist_min_tracks": 5,
+    "min_play_seconds": 30,
+    "ignore_autoplay_unknown": true
+  },
+  "post_download_command": null,
+  "log_file": null,
+  "db_path": null
+}

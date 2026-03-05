@@ -1,0 +1,15 @@
+[Unit]
+Description=FlacJacket - Automatic Spotify-to-FLAC downloader
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=%i
+ExecStart=/usr/bin/python3 -m flacjacket -c /home/%i/.config/flacjacket/config.json poll --loop
+Restart=on-failure
+RestartSec=60
+Environment=PYTHONPATH=/opt/flacjacket
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,11 @@
+[Unit]
+Description=FlacJacket poll timer
+Requires=flacjacket@%i.service
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=30min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
