@@ -92,6 +92,32 @@ CREATE TABLE IF NOT EXISTS playlist_scores (
     decision TEXT,
     updated_at TEXT
 );
+
+CREATE TABLE IF NOT EXISTS blacklist (
+    spotify_id TEXT NOT NULL,
+    type TEXT NOT NULL,
+    name TEXT,
+    artist TEXT,
+    reason TEXT,
+    added_at TEXT,
+    PRIMARY KEY (spotify_id, type)
+);
+
+CREATE INDEX IF NOT EXISTS idx_blacklist_spotify_id ON blacklist(spotify_id);
+
+CREATE TABLE IF NOT EXISTS playlist_tracks (
+    playlist_id TEXT NOT NULL,
+    playlist_name TEXT,
+    track_id TEXT NOT NULL,
+    track_name TEXT,
+    artist_name TEXT,
+    added_at TEXT,
+    fetched_at TEXT,
+    PRIMARY KEY (playlist_id, track_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_playlist_tracks_track_id ON playlist_tracks(track_id);
+CREATE INDEX IF NOT EXISTS idx_playlist_tracks_playlist_id ON playlist_tracks(playlist_id);
 """
 
 
@@ -331,11 +357,18 @@ class PlayTracker:
         self.conn.commit()
 
     def get_playlist_play_stats(self) -> list[dict]:
-        """Get aggregated play stats per playlist from context_uri."""
-        rows = self.conn.execute("""
+        """Get aggregated play stats per playlist.
+
+        Uses context_uri from live polling first, then falls back to
+        cross-referencing the playlist_tracks table (from API sync) against
+        plays for imported data that lacks context info.
+        """
+        # Playlists detected via context_uri (live polling data)
+        context_rows = self.conn.execute("""
             SELECT
                 REPLACE(REPLACE(p.context_uri, 'spotify:playlist:', ''),
                         'spotify:user:', '') AS playlist_id,
+                NULL AS playlist_name,
                 COUNT(DISTINCT p.track_id) AS unique_tracks_seen,
                 COUNT(*) AS total_plays,
                 MIN(p.played_at) AS first_seen,
@@ -346,7 +379,34 @@ class PlayTracker:
             AND p.context_uri LIKE 'spotify:playlist:%'
             GROUP BY p.context_uri
         """).fetchall()
-        return [dict(r) for r in rows]
+
+        # Playlists inferred via playlist_tracks cross-reference
+        inferred_rows = self.conn.execute("""
+            SELECT
+                pt.playlist_id,
+                pt.playlist_name,
+                COUNT(DISTINCT p.track_id) AS unique_tracks_seen,
+                COUNT(*) AS total_plays,
+                MIN(p.played_at) AS first_seen,
+                MAX(p.played_at) AS last_seen
+            FROM playlist_tracks pt
+            INNER JOIN plays p ON pt.track_id = p.track_id
+            GROUP BY pt.playlist_id
+        """).fetchall()
+
+        # Merge results, preferring context-based data
+        seen_ids = set()
+        results = []
+        for r in context_rows:
+            d = dict(r)
+            seen_ids.add(d["playlist_id"])
+            results.append(d)
+        for r in inferred_rows:
+            d = dict(r)
+            if d["playlist_id"] not in seen_ids:
+                results.append(d)
+
+        return results
 
     def save_playlist_scores(self, scores: list[dict]):
         now = datetime.utcnow().isoformat()
@@ -367,13 +427,14 @@ class PlayTracker:
         self.conn.commit()
 
     def get_pending_playlist_downloads(self) -> list[dict]:
-        """Playlists scored for download that haven't been downloaded yet."""
+        """Playlists scored for download that haven't been downloaded or blacklisted."""
         rows = self.conn.execute("""
             SELECT s.* FROM playlist_scores s
             WHERE s.decision = 'download_playlist'
             AND s.playlist_id NOT IN (
                 SELECT spotify_id FROM downloads WHERE type = 'playlist'
             )
+            AND s.playlist_id NOT IN (SELECT spotify_id FROM blacklist)
             ORDER BY s.unique_tracks_seen DESC
         """).fetchall()
         return [dict(r) for r in rows]
@@ -403,6 +464,21 @@ class PlayTracker:
         ).fetchall()
         return [dict(r) for r in rows]
 
+    def remove_download(self, spotify_id: str, dl_type: str) -> bool:
+        """Remove a download record. Returns True if removed."""
+        cursor = self.conn.execute(
+            "DELETE FROM downloads WHERE spotify_id = ? AND type = ?",
+            (spotify_id, dl_type),
+        )
+        self.conn.commit()
+        return cursor.rowcount > 0
+
+    def clear_downloads(self) -> int:
+        """Clear all download records. Returns count removed."""
+        cursor = self.conn.execute("DELETE FROM downloads")
+        self.conn.commit()
+        return cursor.rowcount
+
     # -- Poll state --
 
     def get_state(self, key: str) -> str | None:
@@ -421,18 +497,21 @@ class PlayTracker:
     # -- Decisions that need action --
 
     def get_pending_album_downloads(self) -> list[dict]:
-        """Albums scored for download that haven't been downloaded yet."""
+        """Albums scored for download that haven't been downloaded or blacklisted."""
         rows = self.conn.execute("""
             SELECT s.* FROM album_scores s
             WHERE s.decision = 'download_album'
             AND s.album_id NOT IN (SELECT spotify_id FROM downloads WHERE type = 'album')
+            AND s.album_id NOT IN (SELECT spotify_id FROM blacklist)
             ORDER BY s.score DESC
         """).fetchall()
         return [dict(r) for r in rows]
 
     def get_pending_track_downloads(self) -> list[dict]:
         """Tracks scored for download that haven't been downloaded yet,
-        excluding tracks whose album is already downloaded."""
+        excluding tracks whose album is already downloaded or blacklisted.
+        Also deduplicates by name+artist — if any version of the same song
+        is already downloaded, skip all other versions."""
         rows = self.conn.execute("""
             SELECT s.* FROM track_scores s
             WHERE s.decision = 'download'
@@ -440,6 +519,14 @@ class PlayTracker:
             AND (s.album_id IS NULL OR s.album_id NOT IN (
                 SELECT spotify_id FROM downloads WHERE type = 'album'
             ))
+            AND s.track_id NOT IN (SELECT spotify_id FROM blacklist)
+            AND (s.album_id IS NULL OR s.album_id NOT IN (SELECT spotify_id FROM blacklist))
+            AND NOT EXISTS (
+                SELECT 1 FROM downloads d
+                WHERE d.type = 'track'
+                AND LOWER(d.name) = LOWER(s.track_name)
+                AND LOWER(d.artist) = LOWER(s.artist_name)
+            )
             ORDER BY s.score DESC
         """).fetchall()
         return [dict(r) for r in rows]
@@ -468,3 +555,168 @@ class PlayTracker:
             "total_downloads": downloads,
             "latest_play": latest,
         }
+
+    # -- Blacklist --
+
+    def add_to_blacklist(self, spotify_id: str, id_type: str,
+                         name: str = "", artist: str = "",
+                         reason: str = "") -> bool:
+        """Add an item to the blacklist. Returns True if newly added."""
+        try:
+            self.conn.execute(
+                """INSERT INTO blacklist
+                   (spotify_id, type, name, artist, reason, added_at)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (spotify_id, id_type, name, artist, reason,
+                 datetime.utcnow().isoformat()),
+            )
+            self.conn.commit()
+            return True
+        except sqlite3.IntegrityError:
+            return False
+
+    def remove_from_blacklist(self, spotify_id: str, id_type: str) -> bool:
+        """Remove from blacklist. Returns True if removed."""
+        cursor = self.conn.execute(
+            "DELETE FROM blacklist WHERE spotify_id = ? AND type = ?",
+            (spotify_id, id_type),
+        )
+        self.conn.commit()
+        return cursor.rowcount > 0
+
+    def is_blacklisted(self, spotify_id: str) -> bool:
+        row = self.conn.execute(
+            "SELECT 1 FROM blacklist WHERE spotify_id = ?", (spotify_id,)
+        ).fetchone()
+        return row is not None
+
+    def get_blacklist(self) -> list[dict]:
+        rows = self.conn.execute(
+            "SELECT * FROM blacklist ORDER BY added_at DESC"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def lookup_name(self, spotify_id: str, id_type: str) -> tuple[str, str]:
+        """Try to find name and artist for a spotify_id from local DB.
+        Returns (name, artist)."""
+        if id_type == "album":
+            row = self.conn.execute(
+                "SELECT album_name, artist_name FROM album_scores WHERE album_id = ?",
+                (spotify_id,),
+            ).fetchone()
+            if row:
+                return row["album_name"] or "", row["artist_name"] or ""
+            row = self.conn.execute(
+                "SELECT album_name, artist_name FROM album_cache WHERE album_id = ?",
+                (spotify_id,),
+            ).fetchone()
+            if row:
+                return row["album_name"] or "", row["artist_name"] or ""
+        elif id_type == "track":
+            row = self.conn.execute(
+                "SELECT track_name, artist_name FROM track_scores WHERE track_id = ?",
+                (spotify_id,),
+            ).fetchone()
+            if row:
+                return row["track_name"] or "", row["artist_name"] or ""
+        return "", ""
+
+    # -- Dedup support --
+
+    def get_tracks_covered_by_albums(self, album_ids: list[str]) -> set[tuple[str, str]]:
+        """Get all (track_name_lower, artist_name_lower) pairs from tracks
+        belonging to the given album IDs. Used for compilation dedup."""
+        if not album_ids:
+            return set()
+        placeholders = ",".join("?" * len(album_ids))
+        rows = self.conn.execute(f"""
+            SELECT DISTINCT LOWER(track_name) as tn, LOWER(artist_name) as an
+            FROM plays
+            WHERE album_id IN ({placeholders})
+            AND track_name IS NOT NULL AND artist_name IS NOT NULL
+        """, album_ids).fetchall()
+        return {(r["tn"], r["an"]) for r in rows}
+
+    # -- Playlist track mapping --
+
+    def get_playlist_track_mapping(self) -> dict[str, list[dict]]:
+        """Get tracks grouped by their playlist, for JSON generation.
+
+        Combines context-based data (live polling) with playlist_tracks
+        cross-reference (API sync for imported data).
+        """
+        # Context-based (live-polled data with context_uri)
+        context_rows = self.conn.execute("""
+            SELECT DISTINCT
+                p.context_uri AS playlist_key,
+                p.track_id,
+                p.track_name,
+                p.artist_name,
+                p.album_id,
+                p.album_name,
+                d.file_path,
+                d.type AS download_type
+            FROM plays p
+            INNER JOIN downloads d
+                ON (p.track_id = d.spotify_id AND d.type = 'track')
+                OR (p.album_id = d.spotify_id AND d.type = 'album')
+            WHERE p.context_type = 'playlist'
+            AND p.context_uri IS NOT NULL
+            ORDER BY p.context_uri, p.track_name
+        """).fetchall()
+
+        # Inferred from playlist_tracks table (API sync)
+        inferred_rows = self.conn.execute("""
+            SELECT DISTINCT
+                'spotify:playlist:' || pt.playlist_id AS playlist_key,
+                pt.track_id,
+                pt.track_name,
+                pt.artist_name,
+                p.album_id,
+                p.album_name,
+                d.file_path,
+                d.type AS download_type
+            FROM playlist_tracks pt
+            INNER JOIN plays p ON pt.track_id = p.track_id
+            INNER JOIN downloads d
+                ON (p.track_id = d.spotify_id AND d.type = 'track')
+                OR (p.album_id = d.spotify_id AND d.type = 'album')
+            ORDER BY pt.playlist_id, pt.track_name
+        """).fetchall()
+
+        mapping: dict[str, list[dict]] = {}
+        seen: set[tuple[str, str]] = set()
+
+        for r in list(context_rows) + list(inferred_rows):
+            r = dict(r)
+            key = r.pop("playlist_key")
+            dedup_key = (key, r["track_id"])
+            if dedup_key in seen:
+                continue
+            seen.add(dedup_key)
+            if key not in mapping:
+                mapping[key] = []
+            mapping[key].append(r)
+
+        return mapping
+
+    # -- Playlist track sync --
+
+    def upsert_playlist_tracks_bulk(self, playlist_id: str, playlist_name: str,
+                                    tracks: list[dict]):
+        """Bulk insert tracks for a playlist. Clears old entries first."""
+        self.conn.execute(
+            "DELETE FROM playlist_tracks WHERE playlist_id = ?", (playlist_id,)
+        )
+        now = datetime.utcnow().isoformat()
+        for t in tracks:
+            self.conn.execute(
+                """INSERT INTO playlist_tracks
+                   (playlist_id, playlist_name, track_id, track_name, artist_name,
+                    added_at, fetched_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (playlist_id, playlist_name,
+                 t["track_id"], t.get("track_name", ""), t.get("artist_name", ""),
+                 t.get("added_at", ""), now),
+            )
+        self.conn.commit()

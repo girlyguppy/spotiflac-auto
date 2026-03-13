@@ -10,12 +10,17 @@ Core principle: behavior reveals preference, no arbitrary time gates.
 from .config import Thresholds
 
 
-def score_albums(album_stats: list[dict], thresholds: Thresholds) -> list[dict]:
+def score_albums(
+    album_stats: list[dict],
+    thresholds: Thresholds,
+    blacklisted_ids: set[str] | None = None,
+) -> list[dict]:
     """
     Score albums for download.
 
     Decision: download_album if coverage >= threshold AND unique_tracks >= min.
     No time gate — behavior is the signal.
+    Blacklisted albums get decision = "blacklisted".
     """
     results = []
     for album in album_stats:
@@ -29,7 +34,9 @@ def score_albums(album_stats: list[dict], thresholds: Thresholds) -> list[dict]:
         else:
             coverage = unique_played / total_tracks
 
-        if (
+        if blacklisted_ids and album["album_id"] in blacklisted_ids:
+            decision = "blacklisted"
+        elif (
             coverage >= thresholds.album_coverage
             and unique_played >= thresholds.album_min_unique_tracks
         ):
@@ -59,6 +66,8 @@ def score_tracks(
     track_stats: list[dict],
     album_decisions: dict[str, str],
     thresholds: Thresholds,
+    blacklisted_ids: set[str] | None = None,
+    covered_tracks: set[tuple[str, str]] | None = None,
 ) -> list[dict]:
     """
     Score individual tracks for download.
@@ -66,6 +75,8 @@ def score_tracks(
     A track is marked for download if:
     - It has >= track_plays threshold total plays
     - Its album is NOT already being downloaded as a full album
+    - It is not blacklisted
+    - It is not covered by an album being downloaded (compilation dedup)
     """
     results = []
     for track in track_stats:
@@ -81,10 +92,19 @@ def score_tracks(
             and album_decisions[album_id] == "download_album"
         )
 
-        if (
-            not album_already_covered
-            and total_plays >= thresholds.track_plays
+        if blacklisted_ids and track["track_id"] in blacklisted_ids:
+            decision = "blacklisted"
+        elif album_already_covered:
+            decision = "skip"
+        elif (
+            covered_tracks
+            and (
+                (track.get("track_name") or "").lower(),
+                (track.get("artist_name") or "").lower(),
+            ) in covered_tracks
         ):
+            decision = "covered_by_album"
+        elif total_plays >= thresholds.track_plays:
             decision = "download"
         else:
             decision = "skip"
@@ -138,25 +158,70 @@ def score_playlists(
     return results
 
 
-def run_scoring(tracker, thresholds: Thresholds) -> tuple[list[dict], list[dict], list[dict]]:
+def run_scoring(
+    tracker, thresholds: Thresholds, spotify_client=None,
+) -> tuple[list[dict], list[dict], list[dict]]:
     """Run full scoring cycle: albums, tracks, playlists. Save results to DB.
+
+    If spotify_client is provided, fetches full album tracklists so the
+    dedup catches tracks even when the import resolved them to single IDs.
 
     Returns (album_scores, track_scores, playlist_scores).
     """
+    # Fetch blacklisted IDs once
+    blacklisted_ids = {b["spotify_id"] for b in tracker.get_blacklist()}
+
     known_artists = tracker.get_known_artists() if thresholds.ignore_autoplay_unknown else None
 
     album_stats = tracker.get_album_play_stats(known_artists)
-    album_scores = score_albums(album_stats, thresholds)
+    album_scores = score_albums(album_stats, thresholds, blacklisted_ids)
     tracker.save_album_scores(album_scores)
 
     album_decisions = {s["album_id"]: s["decision"] for s in album_scores}
 
+    # Build covered_tracks for compilation dedup:
+    # tracks from albums being downloaded + already-downloaded albums
+    download_album_ids = [
+        s["album_id"] for s in album_scores if s["decision"] == "download_album"
+    ]
+    downloaded_album_rows = tracker.conn.execute(
+        "SELECT spotify_id FROM downloads WHERE type = 'album'"
+    ).fetchall()
+    downloaded_album_ids = [r["spotify_id"] for r in downloaded_album_rows]
+    all_covered_album_ids = list(set(download_album_ids + downloaded_album_ids))
+    covered_tracks = tracker.get_tracks_covered_by_albums(all_covered_album_ids)
+
+    # If we have API access, fetch full tracklists for download albums
+    # so we catch tracks the import resolved to single IDs
+    if spotify_client and all_covered_album_ids:
+        for album_id in all_covered_album_ids:
+            try:
+                track_names = spotify_client.get_album_track_names(album_id)
+                for name, artist in track_names:
+                    covered_tracks.add((name.lower(), artist.lower()))
+            except Exception:
+                pass  # API failure is non-fatal, DB-only dedup still works
+
     track_stats = tracker.get_track_play_stats(known_artists)
-    track_scores = score_tracks(track_stats, album_decisions, thresholds)
+    track_scores = score_tracks(
+        track_stats, album_decisions, thresholds,
+        blacklisted_ids, covered_tracks,
+    )
     tracker.save_track_scores(track_scores)
 
     playlist_stats = tracker.get_playlist_play_stats()
     playlist_scores = score_playlists(playlist_stats, thresholds)
+
+    # Enrich playlist scores with names from playlist_tracks table
+    for ps in playlist_scores:
+        if not ps.get("playlist_name"):
+            row = tracker.conn.execute(
+                "SELECT playlist_name FROM playlist_tracks WHERE playlist_id = ? LIMIT 1",
+                (ps["playlist_id"],),
+            ).fetchone()
+            if row and row["playlist_name"]:
+                ps["playlist_name"] = row["playlist_name"]
+
     tracker.save_playlist_scores(playlist_scores)
 
     return album_scores, track_scores, playlist_scores

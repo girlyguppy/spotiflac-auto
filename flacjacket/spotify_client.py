@@ -18,7 +18,7 @@ SPOTIFY_AUTH_URL = "https://accounts.spotify.com/authorize"
 SPOTIFY_TOKEN_URL = "https://accounts.spotify.com/api/token"
 SPOTIFY_API_BASE = "https://api.spotify.com/v1"
 
-SCOPES = "user-read-recently-played user-top-read"
+SCOPES = "user-read-recently-played user-top-read playlist-read-private playlist-read-collaborative"
 
 
 class SpotifyAuth:
@@ -240,4 +240,42 @@ class SpotifyClient:
         """Fetch playlist metadata (name, owner, tracks count)."""
         return self._request(f"/playlists/{playlist_id}", {
             "fields": "id,name,owner(display_name),tracks(total)",
+        })
+
+    def get_playlist_full(self, playlist_id: str) -> dict:
+        """Fetch playlist with embedded track items (fallback for get_playlist_tracks)."""
+        return self._request(f"/playlists/{playlist_id}")
+
+    def search_track(self, query: str, limit: int = 1) -> dict:
+        """Search for tracks. Returns search results with tracks.items[]."""
+        return self._request("/search", {
+            "q": query,
+            "type": "track",
+            "limit": min(limit, 50),
+        })
+
+    def get_album_track_names(self, album_id: str) -> list[tuple[str, str]]:
+        """Fetch all track (name, artist) pairs for an album.
+        Returns list of (track_name, primary_artist_name)."""
+        data = self._request(f"/albums/{album_id}")
+        results = []
+        for item in data.get("tracks", {}).get("items", []):
+            name = item.get("name", "")
+            artists = item.get("artists", [])
+            artist = artists[0]["name"] if artists else ""
+            results.append((name, artist))
+        return results
+
+    def get_user_playlists(self, limit: int = 50, offset: int = 0) -> dict:
+        """Fetch the current user's playlists. Paginated."""
+        return self._request("/me/playlists", {
+            "limit": min(limit, 50),
+            "offset": offset,
+        })
+
+    def get_playlist_tracks(self, playlist_id: str, limit: int = 100, offset: int = 0) -> dict:
+        """Fetch tracks from a playlist. Paginated."""
+        return self._request(f"/playlists/{playlist_id}/tracks", {
+            "limit": min(limit, 100),
+            "offset": offset,
         })

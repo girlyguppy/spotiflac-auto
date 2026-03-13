@@ -1,15 +1,17 @@
 """Download orchestrator — calls spotiflac-cli subprocess."""
 
 import json
+import os
 import subprocess
 import shutil
 from typing import Any
 
 
 class Downloader:
-    def __init__(self, cli_path: str, output_dir: str):
+    def __init__(self, cli_path: str, output_dir: str, staging_dir: str | None = None):
         self.cli_path = cli_path
         self.output_dir = output_dir
+        self.staging_dir = staging_dir or os.path.join(output_dir, ".staging")
         self._validate()
 
     def _validate(self):
@@ -31,9 +33,10 @@ class Downloader:
         return self._run(spotify_url)
 
     def _run(self, spotify_url: str) -> dict:
+        os.makedirs(self.staging_dir, exist_ok=True)
         cmd = [
             self.cli_path,
-            "-output", self.output_dir,
+            "-output", self.staging_dir,
             "-lyrics",
             "-json",
             spotify_url,

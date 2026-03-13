@@ -65,6 +65,26 @@ class Config:
     def token_path(self) -> str:
         return os.path.join(self._config_dir or ".", "spotify_token.json")
 
+    @property
+    def tracks_dir(self) -> str:
+        return os.path.join(self.output_dir, "tracks")
+
+    @property
+    def lyrics_dir(self) -> str:
+        return os.path.join(self.output_dir, "lyrics")
+
+    @property
+    def staging_dir(self) -> str:
+        return os.path.join(self.output_dir, ".staging")
+
+    @property
+    def albums_meta_dir(self) -> str:
+        return os.path.join(self.output_dir, ".albums")
+
+    @property
+    def playlists_meta_dir(self) -> str:
+        return os.path.join(self.output_dir, ".playlists")
+
 
 def find_config() -> str | None:
     candidates = [

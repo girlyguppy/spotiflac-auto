@@ -1,95 +1,161 @@
-# SpotiFLAC
+# FlacJacket
 
-<a href="https://trendshift.io/repositories/15737" target="_blank"><img src="https://trendshift.io/api/badge/repositories/15737" alt="afkarxyz%2FSpotiFLAC | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
+Automatic Spotify-to-FLAC download pipeline. Monitors your Spotify listening history, scores albums and tracks by how much you actually listen to them, and downloads qualifying music as lossless FLAC files using [SpotiFLAC](https://github.com/afkarxyz/SpotiFLAC)'s CLI backend.
 
-Get Spotify tracks in true FLAC from Tidal, Qobuz, Amazon Music & Deezer — no account required.
+## What it does
 
-![Windows](https://img.shields.io/badge/Windows-10%2B-0078D6?style=for-the-badge&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiB2aWV3Qm94PSIwIDAgMjAgMjAiPjxwYXRoIGZpbGw9IiNmZmZmZmYiIGZpbGwtcnVsZT0iZXZlbm9kZCIgZD0iTTIwIDEwLjg3M1YyMEw4LjQ3OSAxOC41MzdsLjAwMS03LjY2NEgyMFptLTEzLjEyIDBsLS4wMDEgNy40NjFMMCAxNy40NjF2LTYuNTg4aDYuODhaTTIwIDkuMjczSDguNDhsLS4wMDEtNy44MUwyMCAwdjkuMjczWk02Ljg3OSAxLjY2NmwuMDAxIDcuNjA3SDBWMi41MzlsNi44NzktLjg3M1oiLz48L3N2Zz4=)
-![macOS](https://img.shields.io/badge/macOS-10.13%2B-000000?style=for-the-badge&logo=apple&logoColor=white)
-![Linux](https://img.shields.io/badge/Linux-Any-FCC624?style=for-the-badge&logo=linux&logoColor=white)
-[![Telegram Channel](https://img.shields.io/badge/CHANNEL-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/spotiflac)
-[![Telegram Community](https://img.shields.io/badge/COMMUNITY-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/spotiflac_chat)
+- **Polls Spotify** for your recently played tracks (or imports your Spotify data export)
+- **Scores albums and tracks** based on listening behavior — albums by track coverage, tracks by play count
+- **Downloads FLACs** automatically via `spotiflac-cli` when songs cross configurable thresholds
+- **Deduplicates** intelligently — same song under different Spotify IDs won't download twice
+- **Organizes files** into a flat structure (`tracks/` and `lyrics/`) with album and playlist metadata as JSON files
+- **Syncs playlist membership** via the Spotify API to build playlist indexes
+- **Filters autoplay** — optional scoring filter ignores tracks from unknown artists that Spotify autoplayed
+- **Runs unattended** as a systemd service/timer on a NAS or server
 
-### [Download](https://github.com/afkarxyz/SpotiFLAC/releases)
+## How it works
 
-## Screenshot
+```
+Spotify listening data
+        |
+        v
+   Play history DB (SQLite)
+        |
+        v
+   Scoring engine
+   (album coverage, track plays, playlist membership)
+        |
+        v
+   Download decisions
+   (configurable thresholds)
+        |
+        v
+   spotiflac-cli (FLAC downloads from Tidal/Qobuz/Deezer/Amazon)
+        |
+        v
+   Flat file output: tracks/, lyrics/, .albums/, .playlists/
+```
 
-![Image](https://github.com/user-attachments/assets/adbdc056-bace-44a9-8ba6-898b4526b65a)
+## Prerequisites
 
-## Other projects
+- **Python 3.10+** (stdlib only, no pip dependencies)
+- **`spotiflac-cli`** — the CLI binary from [SpotiFLAC](https://github.com/afkarxyz/SpotiFLAC). Build from source (`go build -o spotiflac-cli .`) or grab a release.
+- **Spotify Developer App** — create one at [developer.spotify.com](https://developer.spotify.com/dashboard) with redirect URI `http://127.0.0.1:8888/callback`
 
-### [SpotiFLAC Next](https://github.com/spotiverse/SpotiFLAC-Next)
+## Setup
 
-Get Spotify tracks in Hi-Res lossless FLACs — no account required.
+1. **Install spotiflac-cli** somewhere on your PATH (e.g., `/usr/local/bin/spotiflac-cli`)
 
-### [SpotiDownloader](https://github.com/afkarxyz/SpotiDownloader)
+2. **Clone this repo:**
+   ```bash
+   git clone https://github.com/girlyguppy/FlacJacket.git
+   cd FlacJacket
+   ```
 
-Get Spotify tracks in MP3 and FLAC via spotidownloader.com
+3. **Create config:**
+   ```bash
+   mkdir -p ~/.config/flacjacket
+   cp config.example.json ~/.config/flacjacket/config.json
+   ```
+   Edit `config.json` and fill in your Spotify `client_id` and `client_secret`.
 
-### [SpotubeDL](https://spotubedl.com)
+4. **Authenticate:**
+   ```bash
+   python3 -m flacjacket auth
+   ```
 
-Download Spotify Tracks, Albums, Playlists as MP3/OGG/Opus with High Quality.
+5. **Import listening history** (optional — if you have a Spotify data export):
+   ```bash
+   python3 -m flacjacket import ~/path/to/spotify-export/
+   ```
 
-### [SpotiFLAC (Mobile)](https://github.com/zarzet/SpotiFLAC-Mobile)
+6. **Run it:**
+   ```bash
+   # One-shot: poll, score, download
+   python3 -m flacjacket poll
 
-SpotiFLAC for Android & iOS — maintained by [@zarzet](https://github.com/zarzet)
+   # Dry run (see what would be downloaded without downloading)
+   python3 -m flacjacket poll --dry-run
 
-## FAQ
+   # Continuous polling loop
+   python3 -m flacjacket poll --loop
+   ```
 
-### Is this software free?
+## Commands
 
-_Yes. This software is completely free.
-You do not need an account, login, or subscription.
-All you need is an internet connection._
+| Command | Description |
+|---------|-------------|
+| `auth` | Authenticate with Spotify (opens browser) |
+| `poll` | Poll for new plays, score, and download. `--loop` for continuous. `--dry-run` to preview. |
+| `score` | Show current scoring results without downloading |
+| `import <path>` | Import Spotify data export (extended or Account Data format) |
+| `download <url>` | Manually download a Spotify album/track/playlist URL |
+| `status` | Show database statistics |
+| `history` | Show recent play history |
+| `downloads` | List all downloaded items |
+| `blacklist` | Show blacklisted items |
+| `skip <url>` | Blacklist an album/track to prevent downloading |
+| `unskip <url>` | Remove an item from the blacklist |
+| `manage` | Interactive download management (remove/re-download) |
+| `sync-playlists` | Sync playlist membership from Spotify API |
+| `organize` | Regenerate album and playlist metadata JSONs |
+| `migrate` | One-time migration from old directory structure to flat layout |
+| `reset` | Clear download records (re-queues everything for download) |
 
-### Can using this software get my Spotify account suspended or banned?
+## Configuration
 
-_No.
-This software has no connection to your Spotify account.
-Spotify data is obtained through reverse engineering of the Spotify Web Player, not through user authentication._
+See `config.example.json` for all options. Key settings:
 
-### Where does the audio come from?
+```json
+{
+  "output_dir": "~/Music",
+  "spotiflac_cli_path": "spotiflac-cli",
+  "poll_interval_minutes": 30,
+  "thresholds": {
+    "album_coverage": 0.5,
+    "album_min_unique_tracks": 2,
+    "track_plays": 3,
+    "playlist_min_tracks": 5,
+    "min_play_seconds": 30,
+    "ignore_autoplay_unknown": true
+  }
+}
+```
 
-_The audio is fetched using third-party APIs._
+- **album_coverage**: Fraction of album tracks you've listened to before it qualifies (0.5 = 50%)
+- **album_min_unique_tracks**: Minimum unique tracks played from an album
+- **track_plays**: Minimum plays for an individual track to qualify
+- **playlist_min_tracks**: Minimum unique tracks from a playlist before it qualifies
+- **min_play_seconds**: Ignore plays shorter than this (skip detection)
+- **ignore_autoplay_unknown**: Filter out autoplay from artists you've never intentionally listened to
 
-### Why does metadata fetching sometimes fail?
+## Output structure
 
-_This usually happens because your IP address has been rate-limited.
-You can wait and try again later, or use a VPN to bypass the rate limit._
+```
+{output_dir}/
+  tracks/              # All FLAC files, flat, deduplicated
+    Artist - Track.flac
+  lyrics/              # All LRC files
+    Artist - Track.lrc
+  .albums/             # Album metadata (JSON)
+    Artist - Album.json
+  .playlists/          # Playlist metadata (JSON)
+    Playlist Name.json
+```
 
-### Why does Windows Defender or antivirus flag or delete the file?
+Album and playlist JSONs map to the flat track files, so downstream tools can reconstruct album/playlist organization without relying on folder structure.
 
-_This is a false positive.
-It likely happens because the executable is compressed using UPX._
+## Running as a service
 
-_If you are concerned, you can fork the repository and build the software yourself from source._
+Systemd unit files are included in `systemd/`:
 
-### Want to support the project?
+```bash
+sudo cp systemd/flacjacket@.service /etc/systemd/system/
+sudo systemctl enable --now flacjacket@$USER.service
+```
 
-_If this software is useful and brings you value,
-consider supporting the project by buying me a coffee.
-Your support helps keep development going._
+This runs FlacJacket in continuous polling mode under your user account.
 
-[![Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/afkarxyz)
+## License
 
-## Disclaimer
-
-This project is for **educational and private use only**. The developer does not condone or encourage copyright infringement.
-
-**SpotiFLAC** is a third-party tool and is not affiliated with, endorsed by, or connected to Spotify, Tidal, Qobuz, Amazon Music, Deezer or any other streaming service.
-
-You are solely responsible for:
-
-1. Ensuring your use of this software complies with your local laws.
-2. Reading and adhering to the Terms of Service of the respective platforms.
-3. Any legal consequences resulting from the misuse of this tool.
-
-The software is provided "as is", without warranty of any kind. The author assumes no liability for any bans, damages, or legal issues arising from its use.
-
-## API Credits
-
-[MusicBrainz](https://musicbrainz.org) · [Spotify Lyrics API](https://github.akashrchandran.in/spotify-lyrics-api) · [LRCLIB](https://lrclib.net) · [Song.link](https://song.link) · [hifi-api](https://github.com/binimum/hifi-api) · [dabmusic.xyz](https://dabmusic.xyz) · [yoinkify.lol](https://github.com/chasemarshall/yoink)
-
-> [!TIP]
->
-> **Star Us**, You will receive all release notifications from GitHub without any delay ~
+Based on [SpotiFLAC](https://github.com/afkarxyz/SpotiFLAC) by afkarxyz.
