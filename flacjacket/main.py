@@ -518,6 +518,12 @@ def cmd_add(args):
             print(f"Already downloaded: {label}")
             return
 
+        # Clean staging before download to prevent cross-contamination
+        import shutil
+        if os.path.isdir(cfg.staging_dir):
+            shutil.rmtree(cfg.staging_dir)
+        os.makedirs(cfg.staging_dir, exist_ok=True)
+
         # Download
         print(f"Downloading {entity_type}: {args.url}")
         result = downloader.download_by_id(spotify_id, entity_type)
