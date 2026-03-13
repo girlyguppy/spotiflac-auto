@@ -118,6 +118,17 @@ CREATE TABLE IF NOT EXISTS playlist_tracks (
 
 CREATE INDEX IF NOT EXISTS idx_playlist_tracks_track_id ON playlist_tracks(track_id);
 CREATE INDEX IF NOT EXISTS idx_playlist_tracks_playlist_id ON playlist_tracks(playlist_id);
+
+CREATE TABLE IF NOT EXISTS whitelist (
+    spotify_id TEXT NOT NULL,
+    type TEXT NOT NULL,
+    name TEXT,
+    artist TEXT,
+    added_at TEXT,
+    PRIMARY KEY (spotify_id, type)
+);
+
+CREATE INDEX IF NOT EXISTS idx_whitelist_spotify_id ON whitelist(spotify_id);
 """
 
 
@@ -595,6 +606,58 @@ class PlayTracker:
             "SELECT * FROM blacklist ORDER BY added_at DESC"
         ).fetchall()
         return [dict(r) for r in rows]
+
+    # -- Whitelist --
+
+    def add_to_whitelist(self, spotify_id: str, id_type: str,
+                         name: str = "", artist: str = "") -> bool:
+        """Add an item to the whitelist. Returns True if newly added."""
+        try:
+            self.conn.execute(
+                """INSERT INTO whitelist
+                   (spotify_id, type, name, artist, added_at)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (spotify_id, id_type, name, artist,
+                 datetime.utcnow().isoformat()),
+            )
+            self.conn.commit()
+            return True
+        except sqlite3.IntegrityError:
+            return False
+
+    def update_whitelist_metadata(self, spotify_id: str, id_type: str,
+                                  name: str, artist: str):
+        """Update name/artist on an existing whitelist entry."""
+        self.conn.execute(
+            "UPDATE whitelist SET name = ?, artist = ? WHERE spotify_id = ? AND type = ?",
+            (name, artist, spotify_id, id_type),
+        )
+        self.conn.commit()
+
+    def remove_from_whitelist(self, spotify_id: str, id_type: str) -> bool:
+        """Remove from whitelist. Returns True if removed."""
+        cursor = self.conn.execute(
+            "DELETE FROM whitelist WHERE spotify_id = ? AND type = ?",
+            (spotify_id, id_type),
+        )
+        self.conn.commit()
+        return cursor.rowcount > 0
+
+    def get_whitelist(self) -> list[dict]:
+        rows = self.conn.execute(
+            "SELECT * FROM whitelist ORDER BY added_at DESC"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_whitelist_ids(self, id_type: str | None = None) -> set[str]:
+        """Get set of whitelisted spotify IDs, optionally filtered by type."""
+        if id_type:
+            rows = self.conn.execute(
+                "SELECT spotify_id FROM whitelist WHERE type = ?", (id_type,)
+            ).fetchall()
+        else:
+            rows = self.conn.execute("SELECT spotify_id FROM whitelist").fetchall()
+        return {r["spotify_id"] for r in rows}
 
     def lookup_name(self, spotify_id: str, id_type: str) -> tuple[str, str]:
         """Try to find name and artist for a spotify_id from local DB.

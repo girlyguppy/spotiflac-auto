@@ -491,23 +491,137 @@ def cmd_import(args):
         tracker.close()
 
 
-def cmd_download(args):
-    """Force-download a specific Spotify URL."""
+def cmd_add(args):
+    """Add a Spotify URL to the whitelist and download it immediately."""
     cfg = load_config(args.config)
+    setup_logging(cfg.log_file)
+    spotify_id, entity_type = parse_spotify_url(args.url)
+    if not spotify_id:
+        print(f"Error: Could not parse Spotify URL/URI: {args.url}")
+        sys.exit(1)
+
+    tracker = PlayTracker(cfg.resolved_db_path)
     downloader = Downloader(cfg.spotiflac_cli_path, cfg.output_dir, cfg.staging_dir)
 
-    print(f"Downloading: {args.url}")
-    result = downloader._run(args.url)
+    try:
+        # Add to whitelist (idempotent)
+        was_new = tracker.add_to_whitelist(spotify_id, entity_type)
+        if was_new:
+            print(f"Added to whitelist: {entity_type} {spotify_id}")
+        else:
+            print(f"Already in whitelist: {entity_type} {spotify_id}")
 
-    if result["success"]:
-        print("Download complete!")
-        if result.get("stdout"):
-            print(result["stdout"])
-    else:
-        print(f"Download failed (exit code {result.get('returncode')})")
-        if result.get("stderr"):
-            print(result["stderr"])
+        # Check if already downloaded
+        if tracker.is_downloaded(spotify_id):
+            name, artist = tracker.lookup_name(spotify_id, entity_type)
+            label = f"{artist} - {name}" if name else spotify_id
+            print(f"Already downloaded: {label}")
+            return
+
+        # Download
+        print(f"Downloading {entity_type}: {args.url}")
+        result = downloader.download_by_id(spotify_id, entity_type)
+        if not result["success"]:
+            print(f"Download failed: {result.get('stderr', result.get('error', ''))[:300]}")
+            sys.exit(1)
+
+        # Flatten
+        from .file_organizer import (
+            flatten_download, generate_album_json, generate_all_album_jsons,
+            generate_playlist_json, _cleanup_empty_dirs,
+        )
+
+        processed = flatten_download(cfg.staging_dir, cfg.tracks_dir, cfg.lyrics_dir, result)
+
+        if entity_type == "album":
+            # Build album JSON from processed files
+            track_files = [
+                {"track_number": i + 1, "track_name": p["track_name"],
+                 "artist_name": p["artist"], "filename": p["filename"]}
+                for i, p in enumerate(processed)
+            ]
+            album_name = processed[0]["album_name"] if processed else ""
+            artist_name = processed[0]["artist"] if processed else ""
+            if track_files:
+                generate_album_json(
+                    cfg.output_dir, spotify_id, album_name, artist_name, track_files,
+                )
+            tracker.record_download(spotify_id, "album", album_name, artist_name)
+            tracker.update_whitelist_metadata(spotify_id, "album", album_name, artist_name)
+            print(f"Album downloaded: {artist_name} - {album_name} ({len(processed)} tracks)")
+
+        elif entity_type == "track":
+            file_path = "tracks/" + processed[0]["filename"] if processed else ""
+            track_name = processed[0]["track_name"] if processed else ""
+            artist_name = processed[0]["artist"] if processed else ""
+            tracker.record_download(
+                spotify_id, "track", track_name, artist_name, file_path=file_path,
+            )
+            tracker.update_whitelist_metadata(spotify_id, "track", track_name, artist_name)
+            print(f"Track downloaded: {artist_name} - {track_name}")
+
+        elif entity_type == "playlist":
+            tracker.record_download(spotify_id, "playlist", "", "")
+            print(f"Playlist downloaded ({len(processed)} tracks)")
+
+        # Clean up
+        try:
+            _cleanup_empty_dirs(cfg.staging_dir)
+        except Exception:
+            pass
+
+    finally:
+        tracker.close()
+
+
+def cmd_download(args):
+    """Force-download a specific Spotify URL (legacy, use 'add' instead)."""
+    # Redirect to cmd_add for backwards compatibility
+    cmd_add(args)
+
+
+def cmd_unadd(args):
+    """Remove a Spotify item from the whitelist."""
+    cfg = load_config(args.config)
+    spotify_id, entity_type = parse_spotify_url(args.url)
+    if not spotify_id:
+        print(f"Error: Could not parse Spotify URL/URI: {args.url}")
         sys.exit(1)
+
+    tracker = PlayTracker(cfg.resolved_db_path)
+    try:
+        removed = tracker.remove_from_whitelist(spotify_id, entity_type)
+        if removed:
+            print(f"Removed from whitelist: {spotify_id} ({entity_type})")
+            print("Note: downloaded files are kept. Use 'manage' to delete them.")
+        else:
+            print(f"Not found in whitelist: {spotify_id}")
+    finally:
+        tracker.close()
+
+
+def cmd_whitelist(args):
+    """Show all whitelisted items."""
+    cfg = load_config(args.config)
+    tracker = PlayTracker(cfg.resolved_db_path)
+
+    try:
+        items = tracker.get_whitelist()
+        if not items:
+            print("Whitelist is empty.")
+            return
+
+        print(f"{'Type':<9} {'Artist':<25} {'Name':<35} {'Added':<20}")
+        print("-" * 92)
+        for w in items:
+            added = (w.get("added_at") or "")[:19].replace("T", " ")
+            print(
+                f"{w['type']:<9} {(w['artist'] or '')[:24]:<25} "
+                f"{(w['name'] or w['spotify_id'])[:34]:<35} "
+                f"{added:<20}"
+            )
+    finally:
+        tracker.close()
 
 
 def cmd_history(args):
@@ -1087,9 +1201,20 @@ def main():
         help="Only import plays after this date",
     )
 
-    # download
+    # download (legacy, redirects to add)
     dl_p = sub.add_parser("download", help="Force-download a specific Spotify URL")
     dl_p.add_argument("url", help="Spotify track/album/playlist URL")
+
+    # add (whitelist + download)
+    add_p = sub.add_parser("add", help="Add to whitelist and download immediately")
+    add_p.add_argument("url", help="Spotify track/album/playlist URL")
+
+    # unadd (remove from whitelist)
+    unadd_p = sub.add_parser("unadd", help="Remove item from whitelist")
+    unadd_p.add_argument("url", help="Spotify URL or URI")
+
+    # whitelist
+    sub.add_parser("whitelist", help="Show all whitelisted items")
 
     # history
     hist_p = sub.add_parser("history", help="Show recent play history")
@@ -1144,6 +1269,9 @@ def main():
         "status": cmd_status,
         "import": cmd_import,
         "download": cmd_download,
+        "add": cmd_add,
+        "unadd": cmd_unadd,
+        "whitelist": cmd_whitelist,
         "history": cmd_history,
         "downloads": cmd_downloads,
         "skip": cmd_skip,

@@ -14,6 +14,7 @@ def score_albums(
     album_stats: list[dict],
     thresholds: Thresholds,
     blacklisted_ids: set[str] | None = None,
+    whitelisted_ids: set[str] | None = None,
 ) -> list[dict]:
     """
     Score albums for download.
@@ -21,6 +22,7 @@ def score_albums(
     Decision: download_album if coverage >= threshold AND unique_tracks >= min.
     No time gate — behavior is the signal.
     Blacklisted albums get decision = "blacklisted".
+    Whitelisted albums get decision = "download_album" (unless blacklisted).
     """
     results = []
     for album in album_stats:
@@ -36,6 +38,8 @@ def score_albums(
 
         if blacklisted_ids and album["album_id"] in blacklisted_ids:
             decision = "blacklisted"
+        elif whitelisted_ids and album["album_id"] in whitelisted_ids:
+            decision = "download_album"
         elif (
             coverage >= thresholds.album_coverage
             and unique_played >= thresholds.album_min_unique_tracks
@@ -68,6 +72,7 @@ def score_tracks(
     thresholds: Thresholds,
     blacklisted_ids: set[str] | None = None,
     covered_tracks: set[tuple[str, str]] | None = None,
+    whitelisted_ids: set[str] | None = None,
 ) -> list[dict]:
     """
     Score individual tracks for download.
@@ -77,6 +82,8 @@ def score_tracks(
     - Its album is NOT already being downloaded as a full album
     - It is not blacklisted
     - It is not covered by an album being downloaded (compilation dedup)
+
+    Whitelisted tracks override skip/covered_by_album but NOT blacklist.
     """
     results = []
     for track in track_stats:
@@ -92,8 +99,12 @@ def score_tracks(
             and album_decisions[album_id] == "download_album"
         )
 
+        is_whitelisted = whitelisted_ids and track["track_id"] in whitelisted_ids
+
         if blacklisted_ids and track["track_id"] in blacklisted_ids:
             decision = "blacklisted"
+        elif is_whitelisted:
+            decision = "download"
         elif album_already_covered:
             decision = "skip"
         elif (
@@ -128,19 +139,23 @@ def score_tracks(
 def score_playlists(
     playlist_stats: list[dict],
     thresholds: Thresholds,
+    whitelisted_ids: set[str] | None = None,
 ) -> list[dict]:
     """
     Score playlists for full download.
 
     A playlist is marked for download if we've seen >= playlist_min_tracks
     unique tracks played from it.
+    Whitelisted playlists are always marked for download.
     """
     results = []
     for pl in playlist_stats:
         unique_tracks = pl.get("unique_tracks_seen") or 0
         total_plays = pl.get("total_plays") or 0
 
-        if unique_tracks >= thresholds.playlist_min_tracks:
+        if whitelisted_ids and pl["playlist_id"] in whitelisted_ids:
+            decision = "download_playlist"
+        elif unique_tracks >= thresholds.playlist_min_tracks:
             decision = "download_playlist"
         else:
             decision = "skip"
@@ -171,10 +186,31 @@ def run_scoring(
     # Fetch blacklisted IDs once
     blacklisted_ids = {b["spotify_id"] for b in tracker.get_blacklist()}
 
+    # Fetch whitelisted IDs by type
+    whitelisted_album_ids = tracker.get_whitelist_ids("album")
+    whitelisted_track_ids = tracker.get_whitelist_ids("track")
+    whitelisted_playlist_ids = tracker.get_whitelist_ids("playlist")
+
     known_artists = tracker.get_known_artists() if thresholds.ignore_autoplay_unknown else None
 
     album_stats = tracker.get_album_play_stats(known_artists)
-    album_scores = score_albums(album_stats, thresholds, blacklisted_ids)
+    # Inject stub entries for whitelisted albums not in play stats
+    seen_album_ids = {a["album_id"] for a in album_stats}
+    for wl in tracker.get_whitelist():
+        if wl["type"] == "album" and wl["spotify_id"] not in seen_album_ids:
+            album_stats.append({
+                "album_id": wl["spotify_id"],
+                "album_name": wl.get("name") or "",
+                "artist_name": wl.get("artist") or "",
+                "total_tracks": 0,
+                "unique_tracks_played": 0,
+                "total_plays": 0,
+                "album_context_plays": 0,
+                "first_played": None,
+                "last_played": None,
+            })
+
+    album_scores = score_albums(album_stats, thresholds, blacklisted_ids, whitelisted_album_ids)
     tracker.save_album_scores(album_scores)
 
     album_decisions = {s["album_id"]: s["decision"] for s in album_scores}
@@ -203,14 +239,42 @@ def run_scoring(
                 pass  # API failure is non-fatal, DB-only dedup still works
 
     track_stats = tracker.get_track_play_stats(known_artists)
+    # Inject stub entries for whitelisted tracks not in play stats
+    seen_track_ids = {t["track_id"] for t in track_stats}
+    for wl in tracker.get_whitelist():
+        if wl["type"] == "track" and wl["spotify_id"] not in seen_track_ids:
+            track_stats.append({
+                "track_id": wl["spotify_id"],
+                "track_name": wl.get("name") or "",
+                "artist_name": wl.get("artist") or "",
+                "album_id": None,
+                "total_plays": 0,
+                "playlist_plays": 0,
+                "first_played": None,
+                "last_played": None,
+            })
+
     track_scores = score_tracks(
         track_stats, album_decisions, thresholds,
-        blacklisted_ids, covered_tracks,
+        blacklisted_ids, covered_tracks, whitelisted_track_ids,
     )
     tracker.save_track_scores(track_scores)
 
     playlist_stats = tracker.get_playlist_play_stats()
-    playlist_scores = score_playlists(playlist_stats, thresholds)
+    # Inject stub entries for whitelisted playlists not in play stats
+    seen_playlist_ids = {p["playlist_id"] for p in playlist_stats}
+    for wl in tracker.get_whitelist():
+        if wl["type"] == "playlist" and wl["spotify_id"] not in seen_playlist_ids:
+            playlist_stats.append({
+                "playlist_id": wl["spotify_id"],
+                "playlist_name": wl.get("name") or "",
+                "unique_tracks_seen": 0,
+                "total_plays": 0,
+                "first_seen": None,
+                "last_seen": None,
+            })
+
+    playlist_scores = score_playlists(playlist_stats, thresholds, whitelisted_playlist_ids)
 
     # Enrich playlist scores with names from playlist_tracks table
     for ps in playlist_scores:
