@@ -1,9 +1,11 @@
-# Personal deployment files
+# Personal deployment files (contain credentials/paths)
 deploy/nas-config.json
 deploy/deploy-nas.sh
 
 # Tokens and credentials
 spotify_token.json
+*.token
+*.json.bak
 
 # Database and logs
 *.db
@@ -19,8 +21,15 @@ build/
 .venv/
 venv/
 
+# Go build artifacts
+spotiflac-cli
+cmd/cli/spotiflac-cli
+
 # IDE
 .vscode/
 .idea/
 *.swp
 *~
+
+# Session logs (personal context)
+SESSION_LOG.md

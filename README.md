@@ -1,6 +1,15 @@
-# FlacJacket
+# SpotiFLAC Auto
 
-Automatic Spotify-to-FLAC download pipeline. Monitors your Spotify listening history, scores albums and tracks by how much you actually listen to them, and downloads qualifying music as lossless FLAC files using [SpotiFLAC](https://github.com/afkarxyz/SpotiFLAC)'s CLI backend.
+Automated Spotify-to-FLAC download pipeline. Monitors your Spotify listening history, scores albums and tracks by how much you actually listen to them, and automatically downloads qualifying music as lossless FLAC files.
+
+Built on top of [SpotiFLAC](https://github.com/afkarxyz/SpotiFLAC) by afkarxyz — this fork adds a headless CLI downloader and a Python automation layer that handles the full pipeline from listening data to organized FLAC library.
+
+## What's in this repo
+
+- **`cmd/cli/`** — Headless CLI wrapper around SpotiFLAC's Go backend. Downloads tracks, albums, and playlists from a Spotify URL without the desktop GUI.
+- **`backend/`** — SpotiFLAC's download engine (Go). Handles Tidal, Qobuz, Deezer, and Amazon with automatic fallback.
+- **`flacjacket/`** — Python automation package. Polls Spotify, scores music, decides what to download, calls `spotiflac-cli`, and organizes the output.
+- **`systemd/`** — Service/timer units for running unattended on a NAS or server.
 
 ## What it does
 
@@ -38,38 +47,36 @@ Spotify listening data
 
 ## Prerequisites
 
+- **Go 1.21+** (to build `spotiflac-cli`)
 - **Python 3.10+** (stdlib only, no pip dependencies)
-- **`spotiflac-cli`** — the CLI binary from [SpotiFLAC](https://github.com/afkarxyz/SpotiFLAC). Build from source (`go build -o spotiflac-cli .`) or grab a release.
 - **Spotify Developer App** — create one at [developer.spotify.com](https://developer.spotify.com/dashboard) with redirect URI `http://127.0.0.1:8888/callback`
 
 ## Setup
 
-1. **Install spotiflac-cli** somewhere on your PATH (e.g., `/usr/local/bin/spotiflac-cli`)
-
-2. **Clone this repo:**
+1. **Build spotiflac-cli:**
    ```bash
-   git clone https://github.com/girlyguppy/FlacJacket.git
-   cd FlacJacket
+   go build -o spotiflac-cli ./cmd/cli/
+   sudo mv spotiflac-cli /usr/local/bin/
    ```
 
-3. **Create config:**
+2. **Create config:**
    ```bash
    mkdir -p ~/.config/flacjacket
    cp config.example.json ~/.config/flacjacket/config.json
    ```
    Edit `config.json` and fill in your Spotify `client_id` and `client_secret`.
 
-4. **Authenticate:**
+3. **Authenticate:**
    ```bash
    python3 -m flacjacket auth
    ```
 
-5. **Import listening history** (optional — if you have a Spotify data export):
+4. **Import listening history** (optional — if you have a Spotify data export):
    ```bash
    python3 -m flacjacket import ~/path/to/spotify-export/
    ```
 
-6. **Run it:**
+5. **Run it:**
    ```bash
    # One-shot: poll, score, download
    python3 -m flacjacket poll
@@ -80,6 +87,26 @@ Spotify listening data
    # Continuous polling loop
    python3 -m flacjacket poll --loop
    ```
+
+## Using spotiflac-cli standalone
+
+The CLI works independently for one-off downloads:
+
+```bash
+# Download a track
+spotiflac-cli https://open.spotify.com/track/...
+
+# Download an album to a specific directory
+spotiflac-cli -o /mnt/music https://open.spotify.com/album/...
+
+# Use a specific service
+spotiflac-cli -s qobuz https://open.spotify.com/track/...
+
+# JSON output (for scripting)
+spotiflac-cli -json https://open.spotify.com/track/...
+```
+
+Options: `-output`/`-o` (directory), `-service`/`-s` (tidal/qobuz/deezer/amazon/auto), `-lyrics` (save .lrc, default true), `-embed-lyrics`, `-json`, `-config` (path to config.json).
 
 ## Commands
 
@@ -154,8 +181,8 @@ sudo cp systemd/flacjacket@.service /etc/systemd/system/
 sudo systemctl enable --now flacjacket@$USER.service
 ```
 
-This runs FlacJacket in continuous polling mode under your user account.
+This runs the automation in continuous polling mode under your user account.
 
 ## License
 
-Based on [SpotiFLAC](https://github.com/afkarxyz/SpotiFLAC) by afkarxyz.
+Based on [SpotiFLAC](https://github.com/afkarxyz/SpotiFLAC) by afkarxyz. See [LICENSE](LICENSE).
