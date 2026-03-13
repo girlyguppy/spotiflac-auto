@@ -52,7 +52,7 @@ func loadConfig(path string) (*Config, error) {
 			return &Config{
 				DownloadPath:  backend.GetDefaultMusicPath(),
 				Downloader:    "auto",
-				AutoOrder:     "tidal-qobuz-amazon-deezer",
+				AutoOrder:     "tidal-qobuz-amazon",
 				AutoQuality:   "24",
 				TidalQuality:  "LOSSLESS",
 				QobuzQuality:  "6",
@@ -142,8 +142,6 @@ func audioFormat(cfg *Config, service string) string {
 			return cfg.AmazonQuality
 		}
 		return "original"
-	case "deezer":
-		return "FLAC"
 	default:
 		return "LOSSLESS"
 	}
@@ -156,7 +154,7 @@ func serviceOrder(cfg *Config) []string {
 	if cfg.AutoOrder != "" {
 		return strings.Split(cfg.AutoOrder, "-")
 	}
-	return []string{"tidal", "qobuz", "amazon", "deezer"}
+	return []string{"tidal", "qobuz", "amazon"}
 }
 
 func downloadTrack(
@@ -202,7 +200,7 @@ func downloadTrack(
 	if (saveLyrics || embedLyrics) && spotifyID != "" {
 		go func() {
 			client := backend.NewLyricsClient()
-			resp, src, err := client.FetchLyricsAllSources(spotifyID, trackName, artistName, 0)
+			resp, src, err := client.FetchLyricsAllSources(spotifyID, trackName, artistName, albumName, 0)
 			if err == nil && resp != nil && len(resp.Lines) > 0 {
 				lrc := client.ConvertToLRC(resp, trackName, artistName)
 				lyricsChan <- lyricsResult{lrc: lrc, source: src}
@@ -250,18 +248,6 @@ func downloadTrack(
 			trackNumber, discNumber, totalTracks, totalDiscs,
 			copyright, publisher, spotifyURL,
 			cfg.AllowFallback, cfg.UseFirstArtistOnly, cfg.UseSingleGenre, cfg.EmbedGenre,
-		)
-	case "deezer":
-		dl := backend.NewDeezerDownloader()
-		filename, err = dl.Download(
-			spotifyID, outputDir, fnFormat,
-			"", "", cfg.TrackNumber, position,
-			trackName, artistName, albumName, albumArtist, releaseDate,
-			coverURL,
-			trackNumber, discNumber, totalTracks,
-			cfg.EmbedMaxQualityCover, totalDiscs,
-			copyright, publisher, spotifyURL,
-			cfg.UseFirstArtistOnly, cfg.UseSingleGenre, cfg.EmbedGenre,
 		)
 	case "amazon":
 		dl := backend.NewAmazonDownloader()
@@ -365,7 +351,7 @@ func main() {
 
 	flag.StringVar(&outputDir, "output", "", "Output directory (default: from config)")
 	flag.StringVar(&outputDir, "o", "", "Output directory (shorthand)")
-	flag.StringVar(&service, "service", "", "Download service: tidal/qobuz/deezer/amazon/auto (default: from config)")
+	flag.StringVar(&service, "service", "", "Download service: tidal/qobuz/amazon/auto (default: from config)")
 	flag.StringVar(&service, "s", "", "Download service (shorthand)")
 	flag.StringVar(&configPath, "config", "", "Path to config.json (default: ~/.spotiflac/config.json)")
 	flag.BoolVar(&saveLyrics, "lyrics", true, "Save .lrc lyrics file alongside FLAC")
