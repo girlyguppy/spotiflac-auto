@@ -31,5 +31,6 @@ cmd/cli/spotiflac-cli
 *.swp
 *~
 
-# Session logs (personal context)
+# Session logs and project context (contain user-specific paths)
 SESSION_LOG.md
+CLAUDE.md
