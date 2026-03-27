@@ -57,7 +57,7 @@ func loadConfig(path string) (*Config, error) {
 				TidalQuality:  "LOSSLESS",
 				QobuzQuality:  "6",
 				AmazonQuality: "original",
-				FilenamePreset: "title-artist",
+				FilenamePreset: "title",
 				FolderPreset:   "album-artist-album",
 				FolderTemplate: "{album_artist}/{album}",
 				AllowFallback:  true,
@@ -74,7 +74,7 @@ func loadConfig(path string) (*Config, error) {
 		TidalQuality:  "LOSSLESS",
 		QobuzQuality:  "6",
 		AmazonQuality: "original",
-		FilenamePreset: "title-artist",
+		FilenamePreset: "title",
 		FolderPreset:   "album-artist-album",
 		FolderTemplate: "{album_artist}/{album}",
 		AllowFallback:  true,
@@ -93,7 +93,7 @@ func filenameFormat(cfg *Config) string {
 	if cfg.FilenameTemplate != "" {
 		return cfg.FilenameTemplate
 	}
-	return "title-artist"
+	return "title"
 }
 
 func buildFolderPath(baseDir string, cfg *Config, albumArtist, albumName, releaseDate string) string {

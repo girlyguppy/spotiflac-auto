@@ -114,8 +114,12 @@ def _move_file_to_flat(staging_dir: str, tracks_dir: str, lyrics_dir: str,
         return None
 
     track_name = os.path.splitext(raw_filename)[0]
-    # Strip leading track numbers (e.g., "01 Song Name" -> "Song Name")
-    track_name = re.sub(r'^\d+[\s.\-_]+', '', track_name)
+    # Strip leading track numbers like "01. Song" or "02 - Song", but only
+    # if they look like real prefixes (1-3 digit number followed by a separator,
+    # and the remainder is a real title, not just more digits)
+    stripped = re.sub(r'^\d{1,3}[\s.\-_]+', '', track_name)
+    if stripped and not stripped.isdigit():
+        track_name = stripped
 
     flat_name = make_track_filename(artist, track_name)
     dest_flac = os.path.join(tracks_dir, flat_name)
@@ -182,6 +186,55 @@ def _cleanup_empty_dirs(base_dir: str, exclude: set | None = None):
 
 
 # ---------------------------------------------------------------------------
+# Track file index (scan real files on disk for fuzzy matching)
+# ---------------------------------------------------------------------------
+
+def _normalize(text: str) -> str:
+    """Lowercase, strip punctuation/whitespace for fuzzy matching."""
+    text = unicodedata.normalize("NFC", text).lower()
+    text = re.sub(r'[^a-z0-9 ]', ' ', text)
+    return re.sub(r'\s+', ' ', text).strip()
+
+
+def build_track_index(tracks_dir: str) -> dict[tuple[str, str], str]:
+    """
+    Scan tracks/ and build a lookup from (normalized_artist, normalized_track)
+    to the real filename on disk.
+
+    Expected format: "Artist - Track.flac"
+    """
+    index: dict[tuple[str, str], str] = {}
+    if not os.path.isdir(tracks_dir):
+        return index
+
+    for fname in os.listdir(tracks_dir):
+        if not fname.endswith(".flac"):
+            continue
+
+        stem = fname[:-5]  # strip .flac
+        parts = stem.split(" - ", 1)
+
+        if len(parts) == 2:
+            artist = parts[0].strip()
+            track = parts[1].strip()
+        else:
+            continue
+
+        key = (_normalize(artist), _normalize(track))
+        if key not in index:
+            index[key] = fname
+
+    return index
+
+
+def find_track_file(index: dict[tuple[str, str], str],
+                    artist: str, track_name: str) -> str:
+    """Look up a real filename from the index. Returns filename or ""."""
+    key = (_normalize(artist), _normalize(track_name))
+    return index.get(key, "")
+
+
+# ---------------------------------------------------------------------------
 # Album JSON generation
 # ---------------------------------------------------------------------------
 
@@ -191,7 +244,11 @@ def generate_album_json(output_dir: str, album_id: str, album_name: str,
     albums_dir = os.path.join(output_dir, ".albums")
     os.makedirs(albums_dir, exist_ok=True)
 
-    safe_name = sanitize_filename(f"{artist_name} - {album_name}") or album_id
+    if artist_name and album_name:
+        safe_name = sanitize_filename(f"{artist_name} - {album_name}")
+    else:
+        safe_name = sanitize_filename(artist_name or album_name or "")
+    safe_name = safe_name or album_id
     filepath = os.path.join(albums_dir, f"{safe_name}.json")
 
     album_data = {
@@ -211,6 +268,7 @@ def generate_album_json(output_dir: str, album_id: str, album_name: str,
 def generate_all_album_jsons(tracker, output_dir: str, spotify_client=None):
     """Regenerate album JSONs for all downloaded albums."""
     tracks_dir = os.path.join(output_dir, "tracks")
+    index = build_track_index(tracks_dir)
 
     album_downloads = tracker.conn.execute(
         "SELECT spotify_id, name, artist FROM downloads WHERE type = 'album'"
@@ -229,13 +287,12 @@ def generate_all_album_jsons(tracker, output_dir: str, spotify_client=None):
                 api_tracks = spotify_client.get_album_track_names(album_id)
                 for i, (tname, tartist) in enumerate(api_tracks, 1):
                     a = tartist or artist_name
-                    fname = make_track_filename(a, tname)
-                    exists = os.path.isfile(os.path.join(tracks_dir, fname))
+                    fname = find_track_file(index, a, tname)
                     track_list.append({
                         "track_number": i,
                         "track_name": tname,
                         "artist_name": a,
-                        "filename": fname if exists else "",
+                        "filename": fname,
                     })
             except Exception as e:
                 log.warning("API tracklist failed for %s: %s", album_name, e)
@@ -248,13 +305,12 @@ def generate_all_album_jsons(tracker, output_dir: str, spotify_client=None):
                 ORDER BY track_name
             """, (album_id,)).fetchall()
             for i, r in enumerate(rows, 1):
-                fname = make_track_filename(r["artist_name"], r["track_name"])
-                exists = os.path.isfile(os.path.join(tracks_dir, fname))
+                fname = find_track_file(index, r["artist_name"], r["track_name"])
                 track_list.append({
                     "track_number": i,
                     "track_name": r["track_name"],
                     "artist_name": r["artist_name"],
-                    "filename": fname if exists else "",
+                    "filename": fname,
                 })
 
         if track_list:
@@ -277,6 +333,7 @@ def generate_playlist_json(tracker, output_dir: str):
     playlist_dir = os.path.join(output_dir, ".playlists")
     os.makedirs(playlist_dir, exist_ok=True)
     tracks_dir = os.path.join(output_dir, "tracks")
+    index = build_track_index(tracks_dir)
 
     for context_uri, tracks in mapping.items():
         playlist_id = context_uri.split(":")[-1] if ":" in context_uri else context_uri
@@ -301,15 +358,14 @@ def generate_playlist_json(tracker, output_dir: str):
         for track in tracks:
             artist = track.get("artist_name") or ""
             tname = track.get("track_name") or ""
-            filename = make_track_filename(artist, tname)
-            exists = os.path.isfile(os.path.join(tracks_dir, filename))
+            filename = find_track_file(index, artist, tname)
 
             track_entries.append({
                 "track_id": track["track_id"],
                 "track_name": tname,
                 "artist_name": artist,
                 "album_name": track.get("album_name") or "",
-                "filename": filename if exists else "",
+                "filename": filename,
                 "source": track.get("download_type") or "",
             })
 
