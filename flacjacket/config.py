@@ -79,11 +79,11 @@ class Config:
 
     @property
     def albums_meta_dir(self) -> str:
-        return os.path.join(self.output_dir, ".albums")
+        return os.path.join(self.output_dir, "albums")
 
     @property
     def playlists_meta_dir(self) -> str:
-        return os.path.join(self.output_dir, ".playlists")
+        return os.path.join(self.output_dir, "playlists")
 
 
 def find_config() -> str | None:

@@ -30,17 +30,17 @@ def sanitize_filename(text: str) -> str:
 
 
 def make_track_filename(artist: str, track_name: str) -> str:
-    """Canonical flat filename: 'Artist - Track.flac'."""
+    """Canonical flat filename: 'Track - Artist.flac'."""
     safe_artist = sanitize_filename(artist) or "Unknown Artist"
     safe_track = sanitize_filename(track_name) or "Unknown Track"
-    return f"{safe_artist} - {safe_track}.flac"
+    return f"{safe_track} - {safe_artist}.flac"
 
 
 def make_lyrics_filename(artist: str, track_name: str) -> str:
-    """Canonical flat lyrics filename: 'Artist - Track.lrc'."""
+    """Canonical flat lyrics filename: 'Track - Artist.lrc'."""
     safe_artist = sanitize_filename(artist) or "Unknown Artist"
     safe_track = sanitize_filename(track_name) or "Unknown Track"
-    return f"{safe_artist} - {safe_track}.lrc"
+    return f"{safe_track} - {safe_artist}.lrc"
 
 
 # ---------------------------------------------------------------------------
@@ -201,7 +201,7 @@ def build_track_index(tracks_dir: str) -> dict[tuple[str, str], str]:
     Scan tracks/ and build a lookup from (normalized_artist, normalized_track)
     to the real filename on disk.
 
-    Expected format: "Artist - Track.flac"
+    Expected format: "Track - Artist.flac"
     """
     index: dict[tuple[str, str], str] = {}
     if not os.path.isdir(tracks_dir):
@@ -215,8 +215,8 @@ def build_track_index(tracks_dir: str) -> dict[tuple[str, str], str]:
         parts = stem.split(" - ", 1)
 
         if len(parts) == 2:
-            artist = parts[0].strip()
-            track = parts[1].strip()
+            track = parts[0].strip()
+            artist = parts[1].strip()
         else:
             continue
 
@@ -240,8 +240,8 @@ def find_track_file(index: dict[tuple[str, str], str],
 
 def generate_album_json(output_dir: str, album_id: str, album_name: str,
                         artist_name: str, track_files: list[dict]):
-    """Write a single album metadata JSON to .albums/."""
-    albums_dir = os.path.join(output_dir, ".albums")
+    """Write a single album metadata JSON to albums/."""
+    albums_dir = os.path.join(output_dir, "albums")
     os.makedirs(albums_dir, exist_ok=True)
 
     if artist_name and album_name:
@@ -324,13 +324,13 @@ def generate_all_album_jsons(tracker, output_dir: str, spotify_client=None):
 def generate_playlist_json(tracker, output_dir: str):
     """
     Generate playlist JSON files mapping playlists to flat track filenames.
-    Writes to {output_dir}/.playlists/{name}.json.
+    Writes to {output_dir}/playlists/{name}.json.
     """
     mapping = tracker.get_playlist_track_mapping()
     if not mapping:
         return
 
-    playlist_dir = os.path.join(output_dir, ".playlists")
+    playlist_dir = os.path.join(output_dir, "playlists")
     os.makedirs(playlist_dir, exist_ok=True)
     tracks_dir = os.path.join(output_dir, "tracks")
     index = build_track_index(tracks_dir)
@@ -384,6 +384,135 @@ def generate_playlist_json(tracker, output_dir: str):
 
 
 # ---------------------------------------------------------------------------
+# Artist JSON generation
+# ---------------------------------------------------------------------------
+
+def generate_all_artist_jsons(output_dir: str, tracker=None):
+    """
+    Generate one JSON per artist in artists/, listing all their tracks
+    and which albums they belong to. Built from files on disk + album JSONs.
+    """
+    tracks_dir = os.path.join(output_dir, "tracks")
+    albums_dir = os.path.join(output_dir, "albums")
+    artists_dir = os.path.join(output_dir, "artists")
+    os.makedirs(artists_dir, exist_ok=True)
+
+    # Build artist -> tracks mapping from disk
+    # Filename format: "Track - Artist.flac"
+    artists: dict[str, list[dict]] = {}
+    for fname in sorted(os.listdir(tracks_dir)) if os.path.isdir(tracks_dir) else []:
+        if not fname.endswith(".flac"):
+            continue
+        stem = fname[:-5]
+        parts = stem.split(" - ", 1)
+        if len(parts) != 2:
+            continue
+        track_name = parts[0].strip()
+        artist_name = parts[1].strip()
+
+        artists.setdefault(artist_name, []).append({
+            "track_name": track_name,
+            "filename": fname,
+        })
+
+    # Build album lookup: track filename -> list of album names
+    track_to_albums: dict[str, list[str]] = {}
+    if os.path.isdir(albums_dir):
+        for jf in os.listdir(albums_dir):
+            if not jf.endswith(".json"):
+                continue
+            try:
+                with open(os.path.join(albums_dir, jf)) as f:
+                    album = json.load(f)
+                album_name = album.get("album_name", "")
+                for t in album.get("tracks", []):
+                    fn = t.get("filename", "")
+                    if fn:
+                        track_to_albums.setdefault(fn, []).append(album_name)
+            except Exception:
+                continue
+
+    # Write artist JSONs
+    for artist_name, tracks in artists.items():
+        # Annotate tracks with album info
+        album_set = set()
+        for t in tracks:
+            albums = track_to_albums.get(t["filename"], [])
+            t["album_name"] = albums[0] if albums else ""
+            album_set.update(albums)
+
+        artist_data = {
+            "artist_name": artist_name,
+            "albums": sorted(album_set),
+            "generated_at": datetime.utcnow().isoformat(),
+            "tracks": tracks,
+        }
+
+        safe_name = sanitize_filename(artist_name) or "Unknown Artist"
+        filepath = os.path.join(artists_dir, f"{safe_name}.json")
+        with open(filepath, "w") as f:
+            json.dump(artist_data, f, indent=2)
+
+    log.info("Wrote %d artist JSONs", len(artists))
+
+
+# ---------------------------------------------------------------------------
+# Retroactive rename (old format -> new format)
+# ---------------------------------------------------------------------------
+
+def rename_tracks_to_new_format(output_dir: str) -> dict:
+    """
+    Rename files from old 'Artist - Track.ext' to new 'Track - Artist.ext'.
+    Also renames .albums -> albums, .playlists -> playlists.
+    Returns stats dict.
+    """
+    stats = {"renamed": 0, "skipped": 0, "folders_moved": 0}
+
+    # Rename metadata folders
+    for old_name, new_name in [(".albums", "albums"), (".playlists", "playlists")]:
+        old_path = os.path.join(output_dir, old_name)
+        new_path = os.path.join(output_dir, new_name)
+        if os.path.isdir(old_path) and not os.path.isdir(new_path):
+            os.rename(old_path, new_path)
+            stats["folders_moved"] += 1
+            log.info("Renamed %s -> %s", old_name, new_name)
+
+    # Rename track and lyrics files
+    for subdir in ("tracks", "lyrics"):
+        dir_path = os.path.join(output_dir, subdir)
+        if not os.path.isdir(dir_path):
+            continue
+
+        ext = ".flac" if subdir == "tracks" else ".lrc"
+
+        for fname in os.listdir(dir_path):
+            if not fname.endswith(ext):
+                continue
+
+            stem = fname[: -len(ext)]
+            parts = stem.split(" - ", 1)
+            if len(parts) != 2:
+                stats["skipped"] += 1
+                continue
+
+            first, second = parts[0].strip(), parts[1].strip()
+
+            # New format: "Track - Artist.ext"
+            new_name = f"{second} - {first}{ext}"
+            old_full = os.path.join(dir_path, fname)
+            new_full = os.path.join(dir_path, new_name)
+
+            if os.path.exists(new_full):
+                stats["skipped"] += 1
+                continue
+
+            os.rename(old_full, new_full)
+            stats["renamed"] += 1
+
+    return stats
+
+
+# ---------------------------------------------------------------------------
 # Migration from old directory structure
 # ---------------------------------------------------------------------------
 
@@ -400,7 +529,7 @@ def migrate_existing_files(output_dir: str, tracker) -> dict:
     os.makedirs(lyrics_dir, exist_ok=True)
 
     stats = {"moved": 0, "duplicates": 0, "lyrics_moved": 0, "dirs_removed": 0}
-    skip_dirs = {"tracks", "lyrics", ".albums", ".playlists", ".staging"}
+    skip_dirs = {"tracks", "lyrics", "albums", "playlists", "artists", ".staging"}
 
     for artist_entry in os.scandir(output_dir):
         if not artist_entry.is_dir() or artist_entry.name.startswith("."):

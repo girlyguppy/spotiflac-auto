@@ -407,7 +407,7 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	data, err := backend.GetFilteredSpotifyData(ctx, spotifyURL, false, 0)
+	data, err := backend.GetFilteredSpotifyData(ctx, spotifyURL, false, 0, "", nil)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error fetching Spotify metadata: %v\n", err)
 		os.Exit(1)

@@ -320,6 +320,13 @@ def _poll_cycle(cfg, client, tracker, downloader, dry_run=False):
     except Exception as e:
         log.error("Playlist JSON generation failed: %s", e)
 
+    # 7b. Generate artist JSON index
+    from .file_organizer import generate_all_artist_jsons
+    try:
+        generate_all_artist_jsons(cfg.output_dir, tracker=tracker)
+    except Exception as e:
+        log.error("Artist JSON generation failed: %s", e)
+
     # 8. Post-download hook
     if cfg.post_download_command:
         log.info("Running post-download command: %s", cfg.post_download_command)
@@ -896,7 +903,7 @@ def _delete_download_files(output_dir: str, download: dict):
             os.remove(lrc_path)
     elif dl_type == "album" and name and artist:
         # Remove album JSON
-        albums_dir = os.path.join(output_dir, ".albums")
+        albums_dir = os.path.join(output_dir, "albums")
         safe_name = sanitize_filename(f"{artist} - {name}")
         json_path = os.path.join(albums_dir, f"{safe_name}.json")
         if os.path.isfile(json_path):
@@ -1099,6 +1106,54 @@ def cmd_organize(args):
         pass
 
     try:
+        from .file_organizer import generate_all_album_jsons, generate_playlist_json, generate_all_artist_jsons
+
+        print("Regenerating album JSONs...")
+        generate_all_album_jsons(tracker, cfg.output_dir, spotify_client=client)
+
+        print("Regenerating playlist JSONs...")
+        generate_playlist_json(tracker, cfg.output_dir)
+
+        print("Regenerating artist JSONs...")
+        generate_all_artist_jsons(cfg.output_dir, tracker=tracker)
+
+        print("Done.")
+    finally:
+        tracker.close()
+
+
+def cmd_rename(args):
+    """Rename files from old 'Artist - Track' to new 'Track - Artist' format."""
+    cfg = load_config(args.config)
+    setup_logging(cfg.log_file)
+
+    from .file_organizer import rename_tracks_to_new_format, generate_all_artist_jsons
+
+    if args.dry_run:
+        tracks_dir = os.path.join(cfg.output_dir, "tracks")
+        if os.path.isdir(tracks_dir):
+            count = sum(1 for f in os.listdir(tracks_dir) if f.endswith(".flac"))
+            print(f"Would rename up to {count} tracks + lyrics and move metadata folders.")
+        return
+
+    print("Renaming files to new format (Track - Artist)...")
+    stats = rename_tracks_to_new_format(cfg.output_dir)
+    print(f"Renamed {stats['renamed']} files, skipped {stats['skipped']}, "
+          f"moved {stats['folders_moved']} folders.")
+
+    # Regenerate all JSONs with new filenames
+    tracker = PlayTracker(cfg.resolved_db_path)
+    client = None
+    try:
+        auth = SpotifyAuth(
+            cfg.spotify.client_id, cfg.spotify.client_secret,
+            cfg.spotify.redirect_uri, cfg.token_path,
+        )
+        client = SpotifyClient(auth)
+    except Exception:
+        pass
+
+    try:
         from .file_organizer import generate_all_album_jsons, generate_playlist_json
 
         print("Regenerating album JSONs...")
@@ -1106,6 +1161,9 @@ def cmd_organize(args):
 
         print("Regenerating playlist JSONs...")
         generate_playlist_json(tracker, cfg.output_dir)
+
+        print("Generating artist JSONs...")
+        generate_all_artist_jsons(cfg.output_dir, tracker=tracker)
 
         print("Done.")
     finally:
@@ -1256,8 +1314,12 @@ def main():
     sub.add_parser("sync-playlists", help="Fetch Spotify playlists and sync track membership")
 
     # organize
-    org_p = sub.add_parser("organize", help="Regenerate album and playlist metadata JSONs")
+    org_p = sub.add_parser("organize", help="Regenerate album, playlist, and artist metadata JSONs")
     org_p.add_argument("--dry-run", action="store_true", help="Show what would change")
+
+    # rename
+    ren_p = sub.add_parser("rename", help="Rename files to new Track - Artist format + regenerate JSONs")
+    ren_p.add_argument("--dry-run", action="store_true", help="Show what would change")
 
     # migrate
     sub.add_parser("migrate", help="One-time migration to flat tracks/ file structure")
@@ -1287,6 +1349,7 @@ def main():
         "reset": cmd_reset,
         "sync-playlists": cmd_sync_playlists,
         "organize": cmd_organize,
+        "rename": cmd_rename,
         "migrate": cmd_migrate,
     }
 
